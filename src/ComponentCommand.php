@@ -52,11 +52,6 @@ class ComponentCommand extends Command
             ->setName('component')
             ->setDescription('Install a LamaPress component in your project ')
             ->addArgument('type', InputArgument::OPTIONAL);
-//            ->addOption('git', null, InputOption::VALUE_NONE, 'Initialize a Git repository')
-//            ->addOption('branch', null, InputOption::VALUE_REQUIRED, 'The branch that should be created for a new repository', $this->defaultBranch())
-//            ->addOption('github', null, InputOption::VALUE_OPTIONAL, 'Create a new repository on GitHub', false)
-//            ->addOption('organization', null, InputOption::VALUE_REQUIRED, 'The GitHub organization to create the new repository for')
-//            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Forces install even if the directory already exists');
     }
 
     /**
@@ -86,13 +81,12 @@ class ComponentCommand extends Command
 
         }
 
-
-
         if (!in_array($this->componentType, $this->componentTypes)) {
             $output->write( "$this->componentType is not a valid component type.");
             die('');
         }
 
+        // TODO: Use lamapress.config.cjs
         if (!file_exists("vite.config.js")) {
             // Attempt to create the directory
             if (!confirm(
@@ -184,7 +178,6 @@ class ComponentCommand extends Command
         $content = preg_replace($replacePattern, $replacement, $content);
 
         return $content;
-
     }
 
     private function renameComponentPath($componentFolderPath)
@@ -239,7 +232,4 @@ class ComponentCommand extends Command
         $config = json_decode($rawConfig, true);
         return $config ?? [];
     }
-
-
-
 }
