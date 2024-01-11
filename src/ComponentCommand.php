@@ -105,21 +105,6 @@ class ComponentCommand extends Command
                 die('Canceled');
             }
         }
-
-        if (confirm('Would you like to rename the component?')) {
-           $this->rename = text(
-               label: 'Component name?',
-               required: true,
-               validate: function (string $value) {
-                   if (str_contains($value, ' ')) {
-                       return 'The component name can not contain a space. Please use snake case';
-                   }
-                   return null;
-                }
-            );
-
-        }
-
     }
 
     /**
@@ -147,8 +132,24 @@ class ComponentCommand extends Command
         // TODO: Give option to rename the component
         // TODO: Store your token
 
+        if (confirm('Would you like to rename the component?')) {
+            $this->rename = text(
+                label: 'Component name?',
+                required: true,
+                validate: function (string $value) {
+                    if (str_contains($value, ' ')) {
+                        return 'The component name can not contain a space. Please use snake case';
+                    }
+                    return null;
+                }
+            );
+        }
+
         $componentFolderPath = "components/$componentTypeFolder/$component";
         $componentFiles = $github->listFilesInDirectory('lamalamaNL/lamapress', $componentFolderPath);
+        if ($this->rename) {
+            $componentFolderPath = $this->renameComponentPath($componentFolderPath);
+        }
         if (!file_exists($componentFolderPath)) {
             // Attempt to create the directory
             mkdir($componentFolderPath, 0777, true);
@@ -163,9 +164,6 @@ class ComponentCommand extends Command
             }
             if (strtolower($componentFile) === 'acf.php') {
                $content = $this->randomizeAcfKeys($content);
-            }
-            if ($this->rename) {
-                $componentFolderPath = $this->renameComponentPath($componentFolderPath);
             }
             $output->writeln('Generated: ' . "$componentFolderPath/$componentFile");
             file_put_contents("$componentFolderPath/$componentFile", $content);
@@ -189,9 +187,11 @@ class ComponentCommand extends Command
 
     }
 
-    private function renameComponentPath($componentFile)
+    private function renameComponentPath($componentFolderPath)
     {
-
+        $baseName = pathinfo($componentFolderPath)['basename'];
+        $newPath = str_replace($baseName, Str::snake($this->rename), $componentFolderPath);
+        return $newPath;
     }
 
     private function getToken() :?string
