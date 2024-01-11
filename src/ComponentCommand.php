@@ -6,6 +6,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Composer;
 use Illuminate\Support\ProcessUtils;
 use Illuminate\Support\Str;
+use LamaLama\Clli\Console\Services\GitHubAuthException;
 use LamaLama\Clli\Console\Services\GitHubClient;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
@@ -31,7 +32,8 @@ class ComponentCommand extends Command
      * @var \Illuminate\Support\Composer
      */
     protected ?string $componentType;
-    protected ?string $rename;
+    protected string $tokenLocation;
+    protected ?string $rename = null;
     protected array $componentTypes = [
         'section',
         'block',
@@ -67,6 +69,8 @@ class ComponentCommand extends Command
     protected function interact(InputInterface $input, OutputInterface $output)
     {
         parent::interact($input, $output);
+        $homePath = exec('cd ~ && pwd');
+        $this->tokenLocation = "$homePath/.clli/config.json";
 
         $this->configurePrompts($input, $output);
 
@@ -96,11 +100,26 @@ class ComponentCommand extends Command
                 default: false,
                 yes: "Yes, i'm sure",
                 no: 'Quit',
-                hint: 'If you proceed in the wrong folder, the files will be genereted')) {
+                hint: 'If you proceed in the wrong folder, the files will be generated in the wrong place')) {
 
                 die('Canceled');
             }
         }
+
+        if (confirm('Would you like to rename the component?')) {
+           $this->rename = text(
+               label: 'Component name?',
+               required: true,
+               validate: function (string $value) {
+                   if (str_contains($value, ' ')) {
+                       return 'The component name can not contain a space. Please use snake case';
+                   }
+                   return null;
+                }
+            );
+
+        }
+
     }
 
     /**
@@ -111,15 +130,20 @@ class ComponentCommand extends Command
      * @return int
      */
     protected function execute(InputInterface $input, OutputInterface $output) {
-        $github = new GitHubClient('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');
+        $githubToken = $this->getToken();
+        $github = new GitHubClient($githubToken);
         $componentTypeFolder = Str::plural($this->componentType);
-        $components = $github->listFilesInDirectory('lamalamaNL/lamapress', 'components/'.$componentTypeFolder);
+        try {
+            $components = $github->listFilesInDirectory('lamalamaNL/lamapress', 'components/'.$componentTypeFolder);
+        } catch (GitHubAuthException $e) {
+            $output->writeln('Github Authorisation failed. Please provide valid token on next run');
+            $this->removeToken();
+            die('');
+        }
         $components = collect($components)->filter(fn($f) => substr($f, 0, 1) !== '.')->values();
 
         $component = select('Which component would you like to install', $components);
-        $output->writeln('$component: ' . $component);
 
-        // TODO: Generate keys for acf fields
         // TODO: Give option to rename the component
         // TODO: Store your token
 
@@ -131,7 +155,7 @@ class ComponentCommand extends Command
         }
         foreach ($componentFiles as $componentFile) {
             $content = $github->downloadFile('lamalamaNL/lamapress', "$componentFolderPath/$componentFile");
-            var_dump("$componentFolderPath/$componentFile");
+
             if (file_exists("$componentFolderPath/$componentFile")) {
                 if (!confirm("$componentFolderPath/$componentFile already exitsts. Overwrite it?")) {
                     continue;
@@ -140,6 +164,10 @@ class ComponentCommand extends Command
             if (strtolower($componentFile) === 'acf.php') {
                $content = $this->randomizeAcfKeys($content);
             }
+            if ($this->rename) {
+                $componentFolderPath = $this->renameComponentPath($componentFolderPath);
+            }
+            $output->writeln('Generated: ' . "$componentFolderPath/$componentFile");
             file_put_contents("$componentFolderPath/$componentFile", $content);
         }
 
@@ -160,5 +188,58 @@ class ComponentCommand extends Command
         return $content;
 
     }
+
+    private function renameComponentPath($componentFile)
+    {
+
+    }
+
+    private function getToken() :?string
+    {
+        $config = $this->getConfig();
+        if (!$config['github-token']) {
+            $token = text('No github token available. Please provide a github API token: ');
+            if ($token) {
+                $this->storeToken($token);
+                return $token;
+            }
+        }
+        return $config['github-token'] ?? null;
+    }
+
+    private function storeToken($token)
+    {
+        $config = $this->getConfig();
+        $config['github-token'] = $token;
+        file_put_contents($this->tokenLocation, json_encode($config));
+    }
+
+    private function removeToken()
+    {
+        $config = $this->getConfig();
+        $config['github-token'] = null;
+        file_put_contents($this->tokenLocation, json_encode($config));
+    }
+
+    private function getConfig() : array
+    {
+        $dir = pathinfo($this->tokenLocation)['dirname'];
+        if(!file_exists($dir)) {
+            mkdir($dir);
+        }
+
+        if(!file_exists($this->tokenLocation)) {
+            return [];
+        }
+        $rawConfig = file_get_contents($this->tokenLocation);
+        if(!$rawConfig) {
+            return [];
+        }
+
+        $config = json_decode($rawConfig, true);
+        return $config ?? [];
+    }
+
+
 
 }

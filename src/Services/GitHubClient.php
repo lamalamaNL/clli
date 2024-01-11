@@ -4,6 +4,7 @@
 namespace LamaLama\Clli\Console\Services;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\ClientException;
 use GuzzleHttp\Exception\GuzzleException;
 
 class GitHubClient
@@ -40,6 +41,9 @@ class GitHubClient
             }, $body);
 
         } catch (GuzzleException $e) {
+            if ($e->getCode()) {
+                throw new GitHubAuthException($e->getMessage());
+            }
             return 'Error: ' . $e->getMessage();
         }
     }
