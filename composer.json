@@ -1,0 +1,48 @@
+{
+    "name": "lamalama/clli",
+    "description": "CLLI - Lama Lama Command Line Interface",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mark de Vries",
+            "email": "mark@lamalama.nl"
+        },
+        {
+            "name": "Edwin Fennema",
+            "email": "edwin@lamalama.nl"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "guzzlehttp/guzzle": "^7.8",
+        "illuminate/filesystem": "^10.20",
+        "illuminate/support": "^10.20",
+        "laravel/prompts": "^0.1",
+        "symfony/console": "^6.0",
+        "symfony/process": "^6.0"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^1.10",
+        "phpunit/phpunit": "^9.3"
+    },
+    "bin": [
+        "bin/clli"
+    ],
+    "autoload": {
+        "psr-4": {
+            "LamaLama\\Clli\\Console\\": "src/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "repositories": {
+        "packagist.org": false,
+        "private-packagist": {
+            "type": "composer",
+            "url": "https://repo.packagist.com/lamalamanl/"
+        }
+    }
+}
