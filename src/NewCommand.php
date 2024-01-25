@@ -145,7 +145,7 @@ class NewCommand extends Command
             'wp plugin install http://downloads.lamapress.nl/wp-rocket.zip',
 
             # Update all plugins
-            'wp plugin update --all',
+            'wp plugin update --all --exclude=https://downloads.lamapress.nl/advanced-custom-fields-pro.zip,https://downloads.lamapress.nl/wp-migrate-db-pro.zip',
 
             # Clone Lamapress WP boilerplate
             'cd wp-content/themes',
