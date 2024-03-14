@@ -22,6 +22,7 @@
         "symfony/process": "^6.0"
     },
     "require-dev": {
+        "pestphp/pest": "^1.23",
         "phpstan/phpstan": "^1.10",
         "phpunit/phpunit": "^9.3"
     },
@@ -34,15 +35,11 @@
         }
     },
     "config": {
-        "sort-packages": true
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
     },
     "minimum-stability": "dev",
-    "prefer-stable": true,
-    "repositories": {
-        "packagist.org": false,
-        "private-packagist": {
-            "type": "composer",
-            "url": "https://repo.packagist.com/lamalamanl/"
-        }
-    }
+    "prefer-stable": true
 }
