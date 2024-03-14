@@ -4,22 +4,18 @@ namespace LamaLama\Clli\Console;
 
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Composer;
-use Illuminate\Support\ProcessUtils;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
 
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\multiselect;
-use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
-class NewCommand extends Command
+class LamaPressNewCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
@@ -36,7 +32,7 @@ class NewCommand extends Command
     protected function configure(): void
     {
         $this
-            ->setName('new')
+            ->setName('lamapress:new')
             ->setDescription('Create a new LamaPress application')
             ->addArgument('name', InputArgument::REQUIRED)
             ->addOption('force', 'f', InputOption::VALUE_NONE, 'Forces install even if the directory already exists');
@@ -51,11 +47,14 @@ class NewCommand extends Command
 
         $this->configurePrompts($input, $output);
 
-        $output->write(PHP_EOL.'<fg=white>██       █████  ███    ███  █████  ██████  ██████  ███████ ███████ ███████ 
-██      ██   ██ ████  ████ ██   ██ ██   ██ ██   ██ ██      ██      ██      
-██      ███████ ██ ████ ██ ███████ ██████  ██████  █████   ███████ ███████ 
-██      ██   ██ ██  ██  ██ ██   ██ ██      ██   ██ ██           ██      ██ 
-███████ ██   ██ ██      ██ ██   ██ ██      ██   ██ ███████ ███████ ███████ '.PHP_EOL.PHP_EOL);
+        $output->write('<fg=white>
+ ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+ ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
 
         if (! $input->getArgument('name')) {
             $input->setArgument('name', text(
@@ -120,16 +119,16 @@ class NewCommand extends Command
             'wp option update start_of_week 1',
             'wp rewrite structure "/%postname%/" --hard',
 
-            # Users
+            // Users
             'wp user create lamalamaMark mark@lamalama.nl --role=administrator',
             'wp user create lamalamaEdwin edwin@lamalama.nl --role=administrator',
             'wp user create lamalamaAuke auke@lamalama.nl --role=administrator',
 
-            # Delete plugins
+            // Delete plugins
             'wp plugin delete akismet',
             'wp plugin delete hello',
 
-            # Install plugins and activate
+            // Install plugins and activate
             'wp plugin install https://downloads.lamapress.nl/advanced-custom-fields-pro.zip --activate',
             'wp plugin install wordpress-seo --activate',
             'wp plugin install acf-content-analysis-for-yoast-seo --activate',
@@ -140,11 +139,11 @@ class NewCommand extends Command
             'wp plugin install tiny-compress-images --activate',
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
 
-            # Install plugins and keep deactivated
+            // Install plugins and keep deactivated
             'wp plugin install wordfence',
             'wp plugin install http://downloads.lamapress.nl/wp-rocket.zip',
 
-            # Update all plugins
+            // Update all plugins
             'wp plugin update wordpress-seo',
             'wp plugin update acf-content-analysis-for-yoast-seo',
             'wp plugin update classic-editor',
@@ -153,26 +152,26 @@ class NewCommand extends Command
             'wp plugin update wp-mail-smtp',
             'wp plugin update tiny-compress-images',
 
-            # Clone Lamapress WP boilerplate
+            // Clone Lamapress WP boilerplate
             'cd wp-content/themes',
             'git clone --depth=1 https://github.com/lamalamaNL/lamapress.git '.$name,
             'wp theme activate '.$name,
 
-            # Delete default themes
+            // Delete default themes
             'wp theme delete twentytwentytwo',
             'wp theme delete twentytwentythree',
             'wp theme delete twentytwentyfour',
 
-            # Go to theme folder
+            // Go to theme folder
             'cd '.$name,
-            
-            # Remove and create README.md
+
+            // Remove and create README.md
             'rm -rf README.md',
             'echo "# '.ucfirst($name).'
             ## A Lamapress website
             " > README.md',
 
-            # Remove and create style.css
+            // Remove and create style.css
             'rm -rf style.css',
             'echo "/*
             Theme Name: '.ucfirst($name).'
@@ -183,7 +182,7 @@ class NewCommand extends Command
             */
             " > style.css',
 
-            # Remove and create .gitignore
+            // Remove and create .gitignore
             'rm -rf .gitignore',
             'echo "# Ignore
             /node_modules
@@ -192,16 +191,16 @@ class NewCommand extends Command
             .DS_Store
             " > .gitignore',
 
-            # Removee .git folder from cloned theme
+            // Removee .git folder from cloned theme
             'rm -rf .git',
 
-            # Initialize a fresh git repository
+            // Initialize a fresh git repository
             'git init -q',
             'git add .',
             'git commit -q -m "LamaPress init"',
-            "git branch -M main",
+            'git branch -M main',
 
-            # Build
+            // Build
             'npm install',
             'npm run build',
         ];
@@ -217,7 +216,7 @@ class NewCommand extends Command
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
             $this->pushToGitHub($name, $directory, $input, $output);
 
-            $output->writeln("".PHP_EOL);
+            $output->writeln(''.PHP_EOL);
             $output->writeln("<bg=blue;fg=white> INFO </> LamaPress ready on <options=bold>[http://{$name}.test]</>. Build something gezellebel.".PHP_EOL);
             $output->writeln("Username: $user".PHP_EOL);
             $output->writeln("Password: $password".PHP_EOL);
@@ -258,7 +257,7 @@ class NewCommand extends Command
             "gh repo create lamalamaNL/{$name} --source=. --push --private",
         ];
 
-        $directory .= "/wp-content/themes/{$name}"; 
+        $directory .= "/wp-content/themes/{$name}";
 
         $this->runCommands($commands, $input, $output, workingPath: $directory, env: ['GIT_TERMINAL_PROMPT' => 0]);
     }
@@ -271,55 +270,5 @@ class NewCommand extends Command
         if ((is_dir($directory) || is_file($directory)) && $directory != getcwd()) {
             throw new RuntimeException('Application already exists!');
         }
-    }
-
-    /**
-     * Run the given commands.
-     */
-    protected function runCommands($commands, InputInterface $input, OutputInterface $output, string $workingPath = null, array $env = []): Process
-    {
-        if (! $output->isDecorated()) {
-            $commands = array_map(function ($value) {
-                if (str_starts_with($value, 'chmod')) {
-                    return $value;
-                }
-
-                if (str_starts_with($value, 'git')) {
-                    return $value;
-                }
-
-                return $value.' --no-ansi';
-            }, $commands);
-        }
-
-        if ($input->getOption('quiet')) {
-            $commands = array_map(function ($value) {
-                if (str_starts_with($value, 'chmod')) {
-                    return $value;
-                }
-
-                if (str_starts_with($value, 'git')) {
-                    return $value;
-                }
-
-                return $value.' --quiet';
-            }, $commands);
-        }
-
-        $process = Process::fromShellCommandline(implode(' && ', $commands), $workingPath, $env, null, null);
-
-        if ('\\' !== DIRECTORY_SEPARATOR && file_exists('/dev/tty') && is_readable('/dev/tty')) {
-            try {
-                $process->setTty(true);
-            } catch (RuntimeException $e) {
-                $output->writeln('  <bg=yellow;fg=black> WARN </> '.$e->getMessage().PHP_EOL);
-            }
-        }
-
-        $process->run(function ($type, $line) use ($output) {
-            $output->write('    '.$line);
-        });
-
-        return $process;
     }
 }

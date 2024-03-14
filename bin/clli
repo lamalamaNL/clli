@@ -8,7 +8,12 @@ if (file_exists(__DIR__.'/../../../autoload.php')) {
 }
 
 $app = new Symfony\Component\Console\Application('CLLI', '1.0.0');
-$app->add(new LamaLama\Clli\Console\NewCommand);
-$app->add(new LamaLama\Clli\Console\ComponentCommand);
+$app->add(new LamaLama\Clli\Console\LamaPressNewCommand);
+$app->add(new LamaLama\Clli\Console\LamaPressComponentCommand);
+$app->add(new LamaLama\Clli\Console\CreateLocalConfigCommand);
+$app->add(new LamaLama\Clli\Console\ShowLocalConfigCommand);
+$app->add(new LamaLama\Clli\Console\ShowProjectConfigCommand);
+$app->add(new LamaLama\Clli\Console\FigmaAccessToken);
+$app->add(new LamaLama\Clli\Console\FigmaConnect);
 
 $app->run();

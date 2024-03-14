@@ -2,27 +2,20 @@
 
 namespace LamaLama\Clli\Console;
 
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Composer;
-use Illuminate\Support\ProcessUtils;
 use Illuminate\Support\Str;
 use LamaLama\Clli\Console\Services\GitHubAuthException;
 use LamaLama\Clli\Console\Services\GitHubClient;
-use RuntimeException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Process\PhpExecutableFinder;
-use Symfony\Component\Process\Process;
 
 use function Laravel\Prompts\confirm;
-use function Laravel\Prompts\multiselect;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
-class ComponentCommand extends Command
+class LamaPressComponentCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
@@ -32,8 +25,11 @@ class ComponentCommand extends Command
      * @var \Illuminate\Support\Composer
      */
     protected ?string $componentType;
+
     protected string $tokenLocation;
+
     protected ?string $rename = null;
+
     protected array $componentTypes = [
         'section',
         'block',
@@ -49,7 +45,7 @@ class ComponentCommand extends Command
     protected function configure()
     {
         $this
-            ->setName('component')
+            ->setName('lamapress:component')
             ->setDescription('Install a LamaPress component in your project ')
             ->addArgument('type', InputArgument::OPTIONAL);
     }
@@ -57,8 +53,6 @@ class ComponentCommand extends Command
     /**
      * Interact with the user before validating the input.
      *
-     * @param  \Symfony\Component\Console\Input\InputInterface  $input
-     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
      * @return void
      */
     protected function interact(InputInterface $input, OutputInterface $output)
@@ -76,27 +70,27 @@ class ComponentCommand extends Command
 ███████ ██   ██ ██      ██ ██   ██ ██      ██   ██ ███████ ███████ ███████ '.PHP_EOL.PHP_EOL);
 
         $this->componentType = $input->getArgument('type');
-        if (!$this->componentType) {
+        if (! $this->componentType) {
             $this->componentType = select('What kind of component would you like to install', $this->componentTypes);
 
         }
 
-        if (!in_array($this->componentType, $this->componentTypes)) {
-            $output->write( "$this->componentType is not a valid component type.");
-            die('');
+        if (! in_array($this->componentType, $this->componentTypes)) {
+            $output->write("$this->componentType is not a valid component type.");
+            exit('');
         }
 
         // TODO: Use lamapress.config.cjs
-        if (!file_exists("vite.config.js")) {
+        if (! file_exists('vite.config.js')) {
             // Attempt to create the directory
-            if (!confirm(
+            if (! confirm(
                 label: "I don't see no vite.config.js file so i guess the current directory is not the Lamapress there root folder. Are you sure you want to continue?",
                 default: false,
                 yes: "Yes, i'm sure",
                 no: 'Quit',
                 hint: 'If you proceed in the wrong folder, the files will be generated in the wrong place')) {
 
-                die('Canceled');
+                exit('Canceled');
             }
         }
     }
@@ -104,11 +98,10 @@ class ComponentCommand extends Command
     /**
      * Execute the command.
      *
-     * @param  \Symfony\Component\Console\Input\InputInterface  $input
-     * @param  \Symfony\Component\Console\Output\OutputInterface  $output
      * @return int
      */
-    protected function execute(InputInterface $input, OutputInterface $output) {
+    protected function execute(InputInterface $input, OutputInterface $output)
+    {
         $githubToken = $this->getToken();
         $github = new GitHubClient($githubToken);
         $componentTypeFolder = Str::plural($this->componentType);
@@ -117,9 +110,9 @@ class ComponentCommand extends Command
         } catch (GitHubAuthException $e) {
             $output->writeln('Github Authorisation failed. Please provide valid token on next run');
             $this->removeToken();
-            die('');
+            exit('');
         }
-        $components = collect($components)->filter(fn($f) => substr($f, 0, 1) !== '.')->values();
+        $components = collect($components)->filter(fn ($f) => substr($f, 0, 1) !== '.')->values();
 
         $component = select('Which component would you like to install', $components);
 
@@ -134,6 +127,7 @@ class ComponentCommand extends Command
                     if (str_contains($value, ' ')) {
                         return 'The component name can not contain a space. Please use snake case';
                     }
+
                     return null;
                 }
             );
@@ -144,7 +138,7 @@ class ComponentCommand extends Command
         if ($this->rename) {
             $componentFolderPath = $this->renameComponentPath($componentFolderPath);
         }
-        if (!file_exists($componentFolderPath)) {
+        if (! file_exists($componentFolderPath)) {
             // Attempt to create the directory
             mkdir($componentFolderPath, 0777, true);
         }
@@ -152,14 +146,14 @@ class ComponentCommand extends Command
             $content = $github->downloadFile('lamalamaNL/lamapress', "$componentFolderPath/$componentFile");
 
             if (file_exists("$componentFolderPath/$componentFile")) {
-                if (!confirm("$componentFolderPath/$componentFile already exitsts. Overwrite it?")) {
+                if (! confirm("$componentFolderPath/$componentFile already exitsts. Overwrite it?")) {
                     continue;
                 }
             }
             if (strtolower($componentFile) === 'acf.php') {
-               $content = $this->randomizeAcfKeys($content);
+                $content = $this->randomizeAcfKeys($content);
             }
-            $output->writeln('Generated: ' . "$componentFolderPath/$componentFile");
+            $output->writeln('Generated: '."$componentFolderPath/$componentFile");
             file_put_contents("$componentFolderPath/$componentFile", $content);
         }
 
@@ -184,19 +178,22 @@ class ComponentCommand extends Command
     {
         $baseName = pathinfo($componentFolderPath)['basename'];
         $newPath = str_replace($baseName, Str::snake($this->rename), $componentFolderPath);
+
         return $newPath;
     }
 
-    private function getToken() :?string
+    private function getToken(): ?string
     {
         $config = $this->getConfig();
-        if (!$config['github-token']) {
+        if (! $config['github-token']) {
             $token = text('No github token available. Please provide a github API token: ');
             if ($token) {
                 $this->storeToken($token);
+
                 return $token;
             }
         }
+
         return $config['github-token'] ?? null;
     }
 
@@ -214,22 +211,23 @@ class ComponentCommand extends Command
         file_put_contents($this->tokenLocation, json_encode($config));
     }
 
-    private function getConfig() : array
+    private function getConfig(): array
     {
         $dir = pathinfo($this->tokenLocation)['dirname'];
-        if(!file_exists($dir)) {
+        if (! file_exists($dir)) {
             mkdir($dir);
         }
 
-        if(!file_exists($this->tokenLocation)) {
+        if (! file_exists($this->tokenLocation)) {
             return [];
         }
         $rawConfig = file_get_contents($this->tokenLocation);
-        if(!$rawConfig) {
+        if (! $rawConfig) {
             return [];
         }
 
         $config = json_decode($rawConfig, true);
+
         return $config ?? [];
     }
 }
