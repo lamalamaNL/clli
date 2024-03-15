@@ -69,7 +69,8 @@ class FigmaAccessToken extends BaseCommand
         
         $commands = [
             'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
-            'jq \'. + {"figma_personal_access_token": "'.$accessToken.'"}\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json'
+            'jq \'. + {"figma_personal_access_token": "'.$accessToken.'"}\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json',
+            'jq --arg updated_at "$(date +\'%Y-%m-%d %H:%M:%S\')" \'.updated_at = $updated_at\ ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json'
         ];
 
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {

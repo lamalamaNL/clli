@@ -15,5 +15,7 @@ $app->add(new LamaLama\Clli\Console\ShowLocalConfigCommand);
 $app->add(new LamaLama\Clli\Console\ShowProjectConfigCommand);
 $app->add(new LamaLama\Clli\Console\FigmaAccessToken);
 $app->add(new LamaLama\Clli\Console\FigmaConnect);
+$app->add(new LamaLama\Clli\Console\StagingCreateCommand);
+$app->add(new LamaLama\Clli\Console\StagingPullCommand);
 
 $app->run();
