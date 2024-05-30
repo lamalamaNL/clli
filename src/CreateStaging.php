@@ -4,6 +4,7 @@ namespace LamaLama\Clli\Console;
 
 use Illuminate\Support\Composer;
 use Illuminate\Support\Str;
+use LamaLama\Clli\Console\Services\CliConfig;
 use Laravel\Forge\Forge;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -22,6 +23,10 @@ class CreateStaging extends BaseCommand
      * @var \Illuminate\Support\Composer
      */
     protected $composer;
+    protected InputInterface $input;
+    protected OutputInterface $output;
+    protected CliConfig $cfg;
+    protected Forge $forge;
 
     /**
      * Configure the command options.
@@ -40,6 +45,9 @@ class CreateStaging extends BaseCommand
     protected function interact(InputInterface $input, OutputInterface $output): void
     {
         parent::interact($input, $output);
+        $this->input = $input;
+        $this->output = $output;
+
 
         $output->write('<fg=white>
  ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
@@ -67,14 +75,17 @@ class CreateStaging extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        // Todo: Check of forge CLI is installed
-        $token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiIxIiwianRpIjoiOGVkYWVhYjEyY2I5MGY4MmNiYzhmMDRiMmRhZDFmNTFkZTdiODFhZDZmNmM1YzA1ODJhY2Y0ZDNjOTI5MDViNjA5ODEyNDBhZDViNzE5ZWUiLCJpYXQiOjE3MTA0MzE3MzguNzM1MzE3LCJuYmYiOjE3MTA0MzE3MzguNzM1MzIsImV4cCI6MjAyNTk2NDUzOC43MzA0Miwic3ViIjoiNjM1Iiwic2NvcGVzIjpbXX0.TnlHpjgRc18nayxwQUehEyZWPANlpdFpgj6zNo0EzrXayYmwpNemz53b7Gr7Kh8LasHnF5WrJsS1DHjEXeeS5T4OdHIbLZgHdnsSrjzB8ESGXmOGq5AZnoxtfdPj9cC3qtuPZxydtn--QtsdfERkuPH8jZfStkUb73ujR8dsnkDW8KSfpBHRmc3GLUciQAYnd426Xdlj0r_xkppYbPp77mc76O9Ox6xmgHjBYi4lhpJf_BYQzfB1__3bqMwT9Ro-8XGF2A6vYARut2w7IqqiytC3nUpRSvxRT2DJFEcUjhI-fWcNXk6Pe1ckBrVRBBj1kMkzKR7YQt9kxRaLvSEvY1XakEKU5MqaIRhrVIndtb62C9E7sg-qNwyyrwHfgPjgQK5diqFV11usdxIk0QHmF4QRzwh-ZBCjupmoC-EU3YLXjCBqJ1ntopDNRgY36XDSTmKUZHxf8ao-mzj0S53uw3Jrx1yBxr8xLefBsVj6f78-g-2s6fpnIEvw6fcxKJLyBrIPe4iJQKAuIhPFk1E5sA0X88x6Kv1OJnWjHx2aDzvDGM3KihlSbOECyjbA5sklRZ3B8z-WGqqGDIi2LGNZicfrsVru1fmTsceZAtjJnJ43McqSZc2Rx-V5dZ5G638xpEWpSIFrFr5ytjEQRDoIT25CCeFc7Cuo5GzjIqfnjOo";
+
+
+        $this->cfg = new CliConfig();
+        $this->forge = new Forge($this->getForgeToken());
         $subdomain = 'test-staging';
         $serverId = '525126';
 
         # Setup the site
-        $forge = new Forge($token);
-        $sites = $forge->sites($serverId);
+        $sites = $this->forge->sites($serverId);
+        var_dump($sites);
+        die('test');
 
 
 
@@ -115,6 +126,26 @@ class CreateStaging extends BaseCommand
             ''
         ];
 
+
+        # Pull repo
+
+
+        #
+
         return 1;
+    }
+
+
+
+    private function getForgeToken()
+    {
+        $forgeToken = $this->cfg->get('forge_token');
+        if ($forgeToken) {
+            return $forgeToken;
+        }
+        $forgeToken = text(label: 'We need a forge token for this command. Please provide a forge token', required: true);
+        $this->cfg->set('forge_token', $forgeToken);
+
+        return $forgeToken;
     }
 }
