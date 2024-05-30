@@ -41,8 +41,9 @@ class BaseCommand extends Command
                 return $value.' --quiet';
             }, $commands);
         }
-
-        $process = Process::fromShellCommandline(implode(' && ', $commands), $workingPath, $env, null, null);
+        $allCommands = implode(' && ', $commands);
+        $output->writeln($allCommands);
+        $process = Process::fromShellCommandline($allCommands, $workingPath, $env, null, null);
 
         if ('\\' !== DIRECTORY_SEPARATOR && file_exists('/dev/tty') && is_readable('/dev/tty')) {
             try {
