@@ -68,19 +68,22 @@ class StagingPullCommand extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $wpMigrateLicense = 'a788f99e-ab59-482e-8bfa-0c73b3ec1fbe';
-        $wpMigrateUser = 'mark@lamalama.nl';
         $connectionInfo = $input->getArgument('connection_info');
 
         $connectionInfoParts = explode(' ', $connectionInfo);
+        $domain = $connectionInfoParts[0];
+
         $name = str_replace('https://', '', $connectionInfoParts[0]);
+        $name = str_replace('www.', '', $name);
         $name = str_replace('.lamalama.dev', '', $name);
+        $name = str_replace('.nl', '', $name);
 
         $user = 'lamalama';
         $password = md5(time().uniqid());
         $email = 'wordpress@lamalama.nl';
 
         $dbName = str_replace('-', '_', strtolower($name));
+        $dbName .= '_'.rand(10000, 99999);
 
         $commands = [
             'if [ -d "./'.$name.'" ]; then
@@ -118,13 +121,14 @@ class StagingPullCommand extends BaseCommand
             'cd '.$name,
 
             // Build
-            'npm install',
-            'npm run build',
+            // 'npm install',
+            // 'npm run build',
 
             // Migrate
-            'wp migrate setting update license '.$wpMigrateLicense.' --user='.$email,
+            'wp_migrate_license_key=$(jq -r \'.wp_migrate_license_key\' ~/.clli/config.json)',
+            'wp migrate setting update license $wp_migrate_license_key --user='.$email,
             'wp migrate pull '.$connectionInfo.' \
-                --find=https://'.$name.'.lamalama.dev \
+                --find='.$domain.' \
                 --replace=http://'.$name.'.test \
                 --media=all \
                 --plugin-files=all'

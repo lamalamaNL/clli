@@ -43,7 +43,7 @@ class CreateLocalConfigCommand extends BaseCommand
     {
         $commands = [
             'mkdir -p ~/.clli',
-            'jq -n \
+            '[ ! -f ~/.clli/config.json ] && jq -n \
             --arg version "1.0.0" \
             --arg created_at "$(date +\'%Y-%m-%d %H:%M:%S\')" \
             \'{version: $version, created_at: $created_at, updated_at: $created_at}\' > ~/.clli/config.json',
