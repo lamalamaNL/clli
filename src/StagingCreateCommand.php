@@ -7,7 +7,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class CreateLocalConfigCommand extends BaseCommand
+class StagingCreateCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
@@ -24,8 +24,8 @@ class CreateLocalConfigCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->setName('config:create')
-            ->setDescription('Create a local CLLI config file');
+            ->setName('staging:create')
+            ->setDescription('Create a staging environment');
     }
 
     /**
@@ -41,16 +41,10 @@ class CreateLocalConfigCommand extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $commands = [
-            'mkdir -p ~/.clli',
-            '[ ! -f ~/.clli/config.json ] && jq -n \
-            --arg version "1.0.0" \
-            --arg created_at "$(date +\'%Y-%m-%d %H:%M:%S\')" \
-            \'{version: $version, created_at: $created_at, updated_at: $created_at}\' > ~/.clli/config.json',
-        ];
+        $commands = [];
 
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
-            $output->writeln('Config file created'.PHP_EOL);
+            // $output->writeln('Config file created.'.PHP_EOL);
         }
 
         return $process->getExitCode();

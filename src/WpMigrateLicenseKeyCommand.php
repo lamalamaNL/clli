@@ -10,7 +10,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 use function Laravel\Prompts\text;
 
-class FigmaConnect extends BaseCommand
+class WpMigrateLicenseKeyCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
@@ -27,9 +27,9 @@ class FigmaConnect extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->setName('figma:connect')
-            ->addArgument('key', InputArgument::REQUIRED)
-            ->setDescription('Connect a Figma file to your project');
+            ->setName('wp-migrate:license-key')
+            ->addArgument('license_key', InputArgument::REQUIRED)
+            ->setDescription('Add a Migrate DB license key to your system');
     }
 
     /**
@@ -48,13 +48,13 @@ class FigmaConnect extends BaseCommand
 ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
  ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
 
-        if (! $input->getArgument('key')) {
-            $input->setArgument('key', text(
-                label: 'What is the key of your Figma file?',
-                placeholder: 'E.g. 6sftwMKT80KxNnVjS9cZcX',
-                required: 'The file key is required.',
+        if (! $input->getArgument('license_key')) {
+            $input->setArgument('license_key', text(
+                label: 'What is your WP Migrate license key?',
+                placeholder: 'E.g. a788f99e-ab59-482e-8bfa-0c73b3ec1fbe',
+                required: 'The license key is required.',
                 validate: fn ($value) => preg_match('/[^\pL\pN\-_.]/', $value) !== 0
-                    ? 'The key may only contain letters, numbers, dashes, underscores, and periods.'
+                    ? 'The license may only contain letters, numbers, dashes, underscores, and periods.'
                     : null,
             ));
         }
@@ -65,11 +65,11 @@ class FigmaConnect extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $key = $input->getArgument('key');
+        $licenseKey = $input->getArgument('license_key');
         
         $commands = [
             'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
-            'jq \'. + {"figma_file_key": "'.$key.'"}\' ./.clli.json > ./.temp_clli.json && mv ./.temp_clli.json ./.clli.json',
+            'jq \'. + {"wp_migrate_license_key": "'.$licenseKey.'"}\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json',
             'jq --arg updated_at "$(date +\'%Y-%m-%d %H:%M:%S\')" \'.updated_at = $updated_at\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json',
         ];
 
