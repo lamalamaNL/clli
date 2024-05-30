@@ -5,7 +5,12 @@
 CLLI development tooling for Lama Lama
 
 ## Local development
+Find your local composer.json
+```
+composer config --list --global
+```
 
+Adjust your local composer.json
 ```
 {
     "require": {
