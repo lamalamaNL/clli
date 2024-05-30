@@ -5,7 +5,12 @@
 CLLI development tooling for Lama Lama
 
 ## Local development
+Find your local composer.json with the following command, the folder that contains your global composer.json file can be found at `data-dir`
+```
+composer config --list --global
+```
 
+Adjust your local composer.json
 ```
 {
     "require": {
