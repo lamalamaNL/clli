@@ -105,6 +105,8 @@ class StagingPullCommand extends BaseCommand
 
             // Install plugins and activate
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
+            'wp_migrate_license_key=$(jq -r \'.wp_migrate_license_key\' ~/.clli/config.json)',
+            'wp migrate setting update license $wp_migrate_license_key --user='.$email,
             'wp plugin update --all',
 
             // Clone Lamapress WP boilerplate
@@ -121,12 +123,10 @@ class StagingPullCommand extends BaseCommand
             'cd '.$name,
 
             // Build
-            // 'npm install',
-            // 'npm run build',
+            'npm install',
+            'npm run build',
 
             // Migrate
-            'wp_migrate_license_key=$(jq -r \'.wp_migrate_license_key\' ~/.clli/config.json)',
-            'wp migrate setting update license $wp_migrate_license_key --user='.$email,
             'wp migrate pull '.$connectionInfo.' \
                 --find='.$domain.' \
                 --replace=http://'.$name.'.test \
