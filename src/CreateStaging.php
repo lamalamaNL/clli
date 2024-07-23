@@ -112,6 +112,7 @@ class CreateStaging extends BaseCommand
         spin(fn() => $this->installWordpress(), 'Installing wordpress');
         spin(fn() => $this->migrateLocalDatabase(), 'Migrating local database to staging');
         spin(fn() => $this->setDeployscriptAndDeploy(), 'Deploying project');
+        // TODO: Een table+ connection string uitspugen voor makelijk connecten van local naar remote db
 
 
         $output = [
