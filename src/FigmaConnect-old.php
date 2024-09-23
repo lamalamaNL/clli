@@ -3,19 +3,14 @@
 namespace LamaLama\Clli\Console;
 
 use Illuminate\Support\Composer;
-use LamaLama\Clli\Console\Services\Websocket\InternalFigmaConnect\EdsPrompt;
-use LamaLama\Clli\Console\Services\Websocket\InternalFigmaConnect\FigmaMessenger;
-use LamaLama\Clli\Console\Services\Websocket\InternalFigmaConnect\Prompt\FigmaPrompt;
-use Ratchet\Server\IoServer;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-use Workerman\Worker;
 use function Laravel\Prompts\text;
 
-class FigmaConnect extends BaseCommand
+class FigmaConnect0old extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
@@ -33,7 +28,8 @@ class FigmaConnect extends BaseCommand
     {
         $this
             ->setName('figma:connect')
-            ->setDescription('Interact with your local code repo from figma');
+            ->addArgument('key', InputArgument::REQUIRED)
+            ->setDescription('Connect a Figma file to your project');
     }
 
     /**
@@ -52,6 +48,16 @@ class FigmaConnect extends BaseCommand
 ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
  ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
 
+        if (! $input->getArgument('key')) {
+            $input->setArgument('key', text(
+                label: 'What is the key of your Figma file?',
+                placeholder: 'E.g. 6sftwMKT80KxNnVjS9cZcX',
+                required: 'The file key is required.',
+                validate: fn ($value) => preg_match('/[^\pL\pN\-_.]/', $value) !== 0
+                    ? 'The key may only contain letters, numbers, dashes, underscores, and periods.'
+                    : null,
+            ));
+        }
     }
 
     /**
@@ -59,10 +65,18 @@ class FigmaConnect extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-                $figmaMessenger = new FigmaMessenger($output);
-////        $ed = new EdsPrompt();
-//        (new FigmaPrompt())->prompt();
-        return Command::SUCCESS;
+        $key = $input->getArgument('key');
 
+        $commands = [
+            'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
+            'jq \'. + {"figma_file_key": "'.$key.'"}\' ./.clli.json > ./.temp_clli.json && mv ./.temp_clli.json ./.clli.json',
+            'jq --arg updated_at "$(date +\'%Y-%m-%d %H:%M:%S\')" \'.updated_at = $updated_at\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json',
+        ];
+
+        if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
+            // $output->writeln('Done'.PHP_EOL);
+        }
+
+        return $process->getExitCode();
     }
 }

@@ -17,10 +17,12 @@
         "guzzlehttp/guzzle": "^7.8",
         "illuminate/filesystem": "^10.20",
         "illuminate/support": "^10.20",
+        "joetannenbaum/chewie": "^0.1.2",
         "laravel/forge-sdk": "^3.14",
         "laravel/prompts": "^0.1",
         "symfony/console": "^6.0",
-        "symfony/process": "^6.0"
+        "symfony/process": "^6.0",
+        "workerman/workerman": "^4.1"
     },
     "require-dev": {
         "laravel/pint": "^1.14",
