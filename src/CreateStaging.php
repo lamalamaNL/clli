@@ -14,6 +14,8 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\info;
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\text;
@@ -112,20 +114,32 @@ class CreateStaging extends BaseCommand
         - Rewrite wp-config with DB credentials
         - Create a summary of what is going to happen
         - Do pre-checks
-        - Check (and fix ) dns
         - Check which branch is checked out and will be deployed
         */
 
-        //    spin(fn() => $this->createSite(), 'Creating site');
-        //    spin(fn() => $this->createDatabase(), 'Creating database');
-        //    spin(fn() => $this->installSsl(), 'Installing SSL certificate');
-        //    spin(fn() => $this->installSsh(), 'Installing your SSH key');
-        //    spin(fn() => $this->installEmptyRepo(), 'Installing empty repo');
-        // spin(fn() => $this->installWordpress(), 'Installing wordpress');
-        // spin(fn() => $this->installPlugins(), 'Installing plugins');
-        // spin(fn() => $this->installTheme(), 'Installing theme');
+        spin(fn () => $this->createSite(), 'Creating site');
+        info('Site created');
+        spin(fn () => $this->createDatabase(), 'Creating database');
+        info('Database created');
+        spin(fn () => $this->updateCloudflareDns(), 'Updating Cloudflare DNS');
+        info('Cloudflare DNS updated');
+        spin(fn () => $this->installSsl(), 'Installing SSL certificate');
+        info('SSL certificate installed');
+        spin(fn () => $this->installSsh(), 'Installing your SSH key');
+        info('SSH key installed');
+        spin(fn () => $this->installEmptyRepo(), 'Installing empty repo');
+        info('Empty repo installed');
+        spin(fn () => $this->installWordpress(), 'Installing wordpress');
+        info('Wordpress installed');
+        spin(fn () => $this->installPlugins(), 'Installing plugins');
+        info('Plugins installed');
+        spin(fn () => $this->installTheme(), 'Installing theme');
+        info('Theme installed');
         spin(fn () => $this->migrateLocalDatabase(), 'Migrating local database to staging');
-        // spin(fn() => $this->setDeployscriptAndDeploy(), 'Deploying project');
+        info('Local database migrated');
+        spin(fn () => $this->setDeployscriptAndDeploy(), 'Deploying project');
+        info('Project deployed');
+
         // TODO: Een table+ connection string uitspugen voor makelijk connecten van local naar remote db
 
         $output = [
@@ -209,6 +223,89 @@ class CreateStaging extends BaseCommand
     }
 
     /**
+     * Update the Cloudflare DNS record
+     */
+    public function updateCloudflareDns()
+    {
+        // Get Cloudflare credentials from config
+        $cfToken = $this->cfg->get('cloudflare_token');
+        if (! $cfToken) {
+            $cfToken = text(
+                label: 'We need a Cloudflare API token for DNS updates. Please provide your token:',
+                required: true
+            );
+            $this->cfg->set('cloudflare_token', $cfToken);
+        }
+
+        $cfZoneId = $this->cfg->get('cloudflare_zone_id');
+        if (! $cfZoneId) {
+            $cfZoneId = text(
+                label: 'We need your Cloudflare Zone ID for lamalama.dev:',
+                required: true
+            );
+            $this->cfg->set('cloudflare_zone_id', $cfZoneId);
+        }
+
+        try {
+            $key = new \Cloudflare\API\Auth\APIToken($cfToken);
+            $adapter = new \Cloudflare\API\Adapter\Guzzle($key);
+            $dns = new \Cloudflare\API\Endpoints\DNS($adapter);
+
+            // Create A record
+            $result = $dns->addRecord(
+                $cfZoneId,
+                'A',
+                $this->subdomain,
+                $this->serverIp(),
+                0, // Auto TTL
+                false // Proxied through Cloudflare
+            );
+
+            if ($result) {
+                $this->output->writeln('DNS record created successfully');
+
+                return true;
+            }
+
+            $this->output->writeln('Failed to create DNS record');
+
+            return false;
+
+        } catch (\Exception $e) {
+            $this->output->writeln('Error updating DNS: '.$e->getMessage());
+
+            return false;
+        }
+    }
+
+    /**
+     * Validate the DNS record
+     */
+    private function validateDnsRecord(): bool
+    {
+        // Allow some time for DNS propagation
+        sleep(5);
+
+        $dnsRecord = dns_get_record($this->fullDomain(), DNS_A);
+
+        if (empty($dnsRecord)) {
+            $this->output->writeln('DNS record not found');
+
+            return false;
+        }
+
+        foreach ($dnsRecord as $record) {
+            if ($record['type'] === 'A' && $record['ip'] === $this->serverIp()) {
+                return true;
+            }
+        }
+
+        $this->output->writeln('DNS record found but IP does not match server IP');
+
+        return false;
+    }
+
+    /**
      * Install SSL certificate
      */
     private function installSsl()
@@ -236,7 +333,7 @@ class CreateStaging extends BaseCommand
             'cd public',
             'wp core download',
             'wp config create --dbname="'.$this->dbName().'" --dbuser="'.$this->dbUsername().'" --dbpass="'.$this->dbPassword().'" --dbhost="127.0.0.1" --dbprefix=wp_',
-            'wp core install --url="http://'.$this->fullDomain().'.test" --title="'.ucfirst($repoProjectName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
+            'wp core install --url="https://'.$this->fullDomain().'" --title="'.ucfirst($repoProjectName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
         ];
 
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
@@ -312,7 +409,14 @@ class CreateStaging extends BaseCommand
      */
     private function getServerId()
     {
-        return '525126';
+        $serverId = $this->cfg->get('forge_server_id');
+        if ($serverId) {
+            return $serverId;
+        }
+        $serverId = text(label: 'We need a forge server ID for this command. Please provide a forge server ID', required: true);
+        $this->cfg->set('forge_server_id', $serverId);
+
+        return $serverId;
     }
 
     /**
@@ -424,7 +528,7 @@ class CreateStaging extends BaseCommand
 
         return $this->site->id;
         // die('No site available');
-         // TEMP FOR TESTING: Needs to asked
+        // TEMP FOR TESTING: Needs to asked
     }
 
     /**
@@ -444,12 +548,18 @@ class CreateStaging extends BaseCommand
      */
     private function getPublicKey(): ?string
     {
-        $ssh_key_path = getenv('HOME').'/.ssh/id_rsa.pub';
+        $publicKeyFilename = $this->cfg->get('public_key_filename');
+        if (! $publicKeyFilename) {
+            $publicKeyFilename = text(label: 'We need a public SSH key filename for this command. Please provide a public key filename', required: true);
+            $this->cfg->set('public_key_filename', $publicKeyFilename);
+        }
+
+        $ssh_key_path = getenv('HOME').'/.ssh/'.$publicKeyFilename;
 
         // Check if the file exists
         if (file_exists($ssh_key_path)) {
             // Read the contents of the file
-            $ssh_key = file_get_contents($ssh_key_path);
+            $ssh_key = file_get_contents($ssh_key_path.'.pub');
 
             if ($ssh_key !== false) {
                 // Output the SSH key
@@ -460,7 +570,18 @@ class CreateStaging extends BaseCommand
             }
         } else {
             // File does not exist
-            echo 'Error: SSH key file not found at '.$ssh_key_path;
+            if (confirm('SSH key not found. Would you like to create a new OpenSSH key pair?')) {
+                $command = "ssh-keygen -t rsa -b 4096 -C 'clli@lamalama.nl' -f ".$ssh_key_path." -N ''";
+                exec($command, $output, $return_value);
+
+                if ($return_value === 0) {
+                    return file_get_contents($ssh_key_path.'.pub');
+                }
+
+                echo "Error: Failed to create SSH key pair\n";
+            } else {
+                echo 'Error: SSH key file not found at '.$ssh_key_path."\n";
+            }
 
             return null;
         }
@@ -540,12 +661,13 @@ class CreateStaging extends BaseCommand
         if (! $key) {
             exit('Could not get your public SSH key.');
         }
+
         $payload = [
             'name' => 'clli_added_key_'.Str::random('8'),
-            'key' => $key,
+            'key' => trim($key),
             'username' => $this->siteIsolatedName(),
         ];
-        var_dump($payload);
+
         try {
             $this->forge->createSSHKey($this->serverId, $payload);
         } catch (ValidationException $e) {
