@@ -23,7 +23,7 @@
         "symfony/process": "^6.0"
     },
     "require-dev": {
-        "laravel/pint": "^1.14",
+        "laravel/pint": "^1.19",
         "phpstan/phpstan": "^1.10",
         "phpunit/phpunit": "^9.3"
     },

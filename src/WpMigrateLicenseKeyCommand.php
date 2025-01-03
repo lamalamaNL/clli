@@ -66,7 +66,7 @@ class WpMigrateLicenseKeyCommand extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $licenseKey = $input->getArgument('license_key');
-        
+
         $commands = [
             'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
             'jq \'. + {"wp_migrate_license_key": "'.$licenseKey.'"}\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json',

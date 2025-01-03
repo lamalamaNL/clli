@@ -66,7 +66,7 @@ class FigmaAccessToken extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $accessToken = $input->getArgument('access_token');
-        
+
         $commands = [
             'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
             'jq \'. + {"figma_personal_access_token": "'.$accessToken.'"}\' ~/.clli/config.json > ~/.clli/temp_config.json && mv ~/.clli/temp_config.json ~/.clli/config.json',

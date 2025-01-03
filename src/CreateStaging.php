@@ -9,15 +9,13 @@ use LamaLama\Clli\Console\Services\CliConfig;
 use Laravel\Forge\Exceptions\ValidationException;
 use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Site;
-use phpseclib3\Crypt\PublicKeyLoader;
-use phpseclib3\Net\SSH2;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
-
 use function Laravel\Prompts\text;
 
 class CreateStaging extends BaseCommand
@@ -30,22 +28,37 @@ class CreateStaging extends BaseCommand
      * @var \Illuminate\Support\Composer
      */
     protected $composer;
+
     protected InputInterface $input;
+
     protected OutputInterface $output;
+
     protected CliConfig $cfg;
+
     protected Forge $forge;
+
     protected ?Site $site = null;
 
     protected ?string $subdomain = null;
-    protected string $serverId = '525126';
+
+    private ?string $serverId = null;
+
     private ?string $db_password = null;
+
     private ?string $db_name = null;
+
     private ?string $db_user = null;
+
     private ?string $siteIsolatedName = null;
+
     private ?string $ip = null;
+
     private ?string $wpUser = null;
+
     private ?string $repo = null;
+
     private ?string $wpUserEmail = null;
+
     private ?string $wpPassword = null;
 
     /**
@@ -56,7 +69,7 @@ class CreateStaging extends BaseCommand
         $this
             ->setName('lamapress:staging')
             ->addArgument('subdomain', InputArgument::OPTIONAL)
-            ->setDescription('Create a staging environment and install wordpress for this project on a forge server.');
+            ->setDescription('Create a staging environment and install WordPress for this project on a Forge server.');
     }
 
     /**
@@ -68,7 +81,6 @@ class CreateStaging extends BaseCommand
         $this->input = $input;
         $this->output = $output;
 
-
         $output->write('<fg=white>
  ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
 ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
@@ -78,16 +90,6 @@ class CreateStaging extends BaseCommand
 ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
  ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
 
-//        if (! $input->getArgument('key')) {
-//            $input->setArgument('key', text(
-//                label: 'What is the key of your Figma file?',
-//                placeholder: 'E.g. 6sftwMKT80KxNnVjS9cZcX',
-//                required: 'The file key is required.',
-//                validate: fn ($value) => preg_match('/[^\pL\pN\-_.]/', $value) !== 0
-//                    ? 'The key may only contain letters, numbers, dashes, underscores, and periods.'
-//                    : null,
-//            ));
-//        }
     }
 
     /**
@@ -95,39 +97,36 @@ class CreateStaging extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-
-        $this->cfg = new CliConfig();
+        $this->cfg = new CliConfig;
         $this->forge = new Forge($this->getForgeToken());
         $this->forge->setTimeout(300);
+        $this->serverId = $this->getServerId();
         $this->subdomain = $this->getSubdomain();
         $this->repo = $this->calulateRepo();
 
-        # Setup the site
+        // Setup the site
         $sites = $this->forge->sites($this->serverId);
 
+        /* TODO:
+        - Get all setup van rules from LamaPressNewCommand to install wordpress
+        - Rewrite wp-config with DB credentials
+        - Create a summary of what is going to happen
+        - Do pre-checks
+        - Check (and fix ) dns
+        - Check which branch is checked out and will be deployed
+        */
 
-/* TODO:
-- Get all setup van rules from LamaPressNewCommand to install wordpress
-- Rewrite wp-config with DB credentials
-- Create a summary of what is going to happen
-- Do pre-checks
-- Check (and fix ) dns
-- Check which branch is checked out and will be deployed
-*/
-
-
-    //    spin(fn() => $this->createSite(), 'Creating site');
-    //    spin(fn() => $this->createDatabase(), 'Creating database');
-    //    spin(fn() => $this->installSsl(), 'Installing SSL certificate');
-    //    spin(fn() => $this->installSsh(), 'Installing your SSH key');
-    //    spin(fn() => $this->installEmptyRepo(), 'Installing empty repo');
+        //    spin(fn() => $this->createSite(), 'Creating site');
+        //    spin(fn() => $this->createDatabase(), 'Creating database');
+        //    spin(fn() => $this->installSsl(), 'Installing SSL certificate');
+        //    spin(fn() => $this->installSsh(), 'Installing your SSH key');
+        //    spin(fn() => $this->installEmptyRepo(), 'Installing empty repo');
         // spin(fn() => $this->installWordpress(), 'Installing wordpress');
         // spin(fn() => $this->installPlugins(), 'Installing plugins');
         // spin(fn() => $this->installTheme(), 'Installing theme');
-        spin(fn() => $this->migrateLocalDatabase(), 'Migrating local database to staging');
+        spin(fn () => $this->migrateLocalDatabase(), 'Migrating local database to staging');
         // spin(fn() => $this->setDeployscriptAndDeploy(), 'Deploying project');
         // TODO: Een table+ connection string uitspugen voor makelijk connecten van local naar remote db
-
 
         $output = [
             ['site domain: ', $this->fullDomain()],
@@ -137,53 +136,51 @@ class CreateStaging extends BaseCommand
             ['DB username', $this->dbUsername()],
             ['DB password', $this->dbPassword()],
         ];
+
         table(['Key', 'Value'], $output);
-
-
-
-
 
         return 1;
     }
 
-
     private function calulateRepo()
     {
-        if($this->repo) {
+        if ($this->repo) {
             return $this->repo;
         }
 
         $repoFromRemote = shell_exec('git config --get remote.origin.url');
-        if($repoFromRemote) {
+        if ($repoFromRemote) {
             $repoFromRemote = str_replace('.git', '', explode(':', $repoFromRemote)[1] ?? '');
             if ($repoFromRemote) {
                 return $this->repo = trim($repoFromRemote);
             }
 
         }
-        return  $this->repo = "lamalamaNL/" . trim(basename(getcwd()));
+
+        return $this->repo = 'lamalamaNL/'.trim(basename(getcwd()));
     }
 
     private function createSite()
     {
         $config = [
-            "domain" => $this->fullDomain(),
-            "project_type" => "php",
-            "aliases" => [],
-            "directory" => "/public",
-            "isolated" => true,
-            "username" => $this->siteIsolatedName(),
-//            "database" => "site_com_db",
-            "php_version" => "php81"
+            'domain' => $this->fullDomain(),
+            'project_type' => 'php',
+            'aliases' => [],
+            'directory' => '/public',
+            'isolated' => true,
+            'username' => $this->siteIsolatedName(),
+            //            "database" => "site_com_db",
+            'php_version' => 'php83',
         ];
 
         try {
             $this->site = $this->forge->createSite($this->serverId, $config);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
+
         return $this->site;
     }
 
@@ -197,8 +194,8 @@ class CreateStaging extends BaseCommand
             ]);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
     }
 
@@ -208,8 +205,8 @@ class CreateStaging extends BaseCommand
             return $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), ['domains' => [$this->fullDomain()]], true);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
     }
 
@@ -219,7 +216,7 @@ class CreateStaging extends BaseCommand
 
         $commands = [
             // Install WordPress
-            'cd ' . $this->fullDomain(),
+            'cd '.$this->fullDomain(),
             'mkdir public',
             'cd public',
             'wp core download',
@@ -233,7 +230,7 @@ class CreateStaging extends BaseCommand
     private function installPlugins()
     {
         $commands = [
-            'cd ' . $this->fullDomain() . '/public',
+            'cd '.$this->fullDomain().'/public',
             // Delete plugins
             'wp plugin delete akismet',
             'wp plugin delete hello',
@@ -250,7 +247,7 @@ class CreateStaging extends BaseCommand
         $repoProjectName = explode('/', $this->repo)[1];
         $commands = [
             // Delete plugins
-            'cd ' . $this->fullDomain() . '/public',
+            'cd '.$this->fullDomain().'/public',
 
             // Clone Lamapress WP boilerplate
             'cd wp-content/themes',
@@ -262,27 +259,31 @@ class CreateStaging extends BaseCommand
 
     private function runCommandViaApi($command)
     {
-        $this->output->writeln('Run command: ' . $command['command']);
+        $this->output->writeln('Run command: '.$command['command']);
         $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
         var_dump($siteCommand->status);
         var_dump($siteCommand->output);
         foreach ($siteCommand->output as $line) {
-            $this->output->writeln('Result: ' . $line);
+            $this->output->writeln('Result: '.$line);
         }
 
     }
 
     private function runCommandViaDeployScript($command)
     {
-        $this->output->writeln('Run command: ' . $command);
+        $this->output->writeln('Run command: '.$command);
         $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
         $result = $this->forge->deploySite($this->serverId, $this->siteId());
         echo 'Deployment result:? ';
+
         // var_dump($result);
         return $result;
     }
 
-
+    private function getServerId()
+    {
+        return '525126';
+    }
 
     private function getForgeToken()
     {
@@ -302,29 +303,32 @@ class CreateStaging extends BaseCommand
         if ($subdomain) {
             return $subdomain;
         }
+
         return text(label: 'What is the subdomain we need to deploy to', required: true);
 
     }
 
     private function fullDomain()
     {
-        return $this->subdomain . ".lamalama.dev";
+        return $this->subdomain.'.lamalama.dev';
     }
 
     private function dbName()
     {
-        if($this->db_name) {
+        if ($this->db_name) {
             return $this->db_name;
         }
-        return $this->db_name = Str::slug('db_' . $this->fullDomain(), '_');
+
+        return $this->db_name = Str::slug('db_'.$this->fullDomain(), '_');
     }
 
     private function dbUsername()
     {
-        if($this->db_user) {
+        if ($this->db_user) {
             return $this->db_user;
         }
-        return $this->db_user = Str::slug('db_user_' . $this->fullDomain(), '_');
+
+        return $this->db_user = Str::slug('db_user_'.$this->fullDomain(), '_');
     }
 
     private function dbPassword()
@@ -332,35 +336,38 @@ class CreateStaging extends BaseCommand
         if ($this->db_password) {
             return $this->db_password;
         }
+
         return $this->db_password = 'Edb1ZQvLR2mfLj';
-//        return $this->db_password = Str::random(14);
+        //        return $this->db_password = Str::random(14);
     }
 
     private function siteIsolatedName()
     {
-        if($this->siteIsolatedName) {
+        if ($this->siteIsolatedName) {
             return $this->siteIsolatedName;
         }
 
-        return $this->siteIsolatedName = Str::slug('siteuser_' . $this->fullDomain(), '_');
+        return $this->siteIsolatedName = Str::slug('siteuser_'.$this->fullDomain(), '_');
     }
 
     private function webdir()
     {
-        if(!$this->site) {
+        if (! $this->site) {
             $this->site = $this->forge->site($this->serverId, '2530605');
         }
+
         return rtrim($this->site->directory, '/');
     }
 
     private function siteId()
     {
-        if(!$this->site) {
+        if (! $this->site) {
             $this->site = $this->forge->site($this->serverId, '2530605');
         }
+
         return $this->site->id;
         // die('No site available');
-        return ; // TEMP FOR TESTING: Needs to asked
+         // TEMP FOR TESTING: Needs to asked
     }
 
     private function serverIp()
@@ -368,12 +375,13 @@ class CreateStaging extends BaseCommand
         if ($this->ip) {
             return $this->ip;
         }
+
         return $this->ip = $this->forge->server($this->serverId)->ipAddress;
     }
 
     private function getPublicKey(): ?string
     {
-        $ssh_key_path = getenv("HOME") . '/.ssh/id_rsa.pub';
+        $ssh_key_path = getenv('HOME').'/.ssh/id_rsa.pub';
 
         // Check if the file exists
         if (file_exists($ssh_key_path)) {
@@ -389,7 +397,8 @@ class CreateStaging extends BaseCommand
             }
         } else {
             // File does not exist
-            echo "Error: SSH key file not found at " . $ssh_key_path;
+            echo 'Error: SSH key file not found at '.$ssh_key_path;
+
             return null;
         }
 
@@ -397,7 +406,7 @@ class CreateStaging extends BaseCommand
 
     private function wpUser()
     {
-        if($this->wpUser) {
+        if ($this->wpUser) {
             return $this->wpUser;
         }
 
@@ -406,7 +415,7 @@ class CreateStaging extends BaseCommand
 
     private function wpPassword()
     {
-        if($this->wpPassword) {
+        if ($this->wpPassword) {
             return $this->wpPassword;
         }
 
@@ -415,7 +424,7 @@ class CreateStaging extends BaseCommand
 
     private function wpUserEmail()
     {
-        if($this->wpUserEmail) {
+        if ($this->wpUserEmail) {
             return $this->wpUserEmail;
         }
 
@@ -424,7 +433,7 @@ class CreateStaging extends BaseCommand
 
     private function getPrivateKey(): ?string
     {
-        $ssh_key_path = getenv("HOME") . '/.ssh/id_rsa';
+        $ssh_key_path = getenv('HOME').'/.ssh/id_rsa';
 
         // Check if the file exists
         if (file_exists($ssh_key_path)) {
@@ -440,7 +449,8 @@ class CreateStaging extends BaseCommand
             }
         } else {
             // File does not exist
-            echo "Error: SSH key file not found at " . $ssh_key_path;
+            echo 'Error: SSH key file not found at '.$ssh_key_path;
+
             return null;
         }
 
@@ -449,38 +459,38 @@ class CreateStaging extends BaseCommand
     private function installSsh()
     {
         $key = $this->getPublicKey();
-        if(!$key) {
-            die('Could not get your public SSH key.');
+        if (! $key) {
+            exit('Could not get your public SSH key.');
         }
         $payload = [
-            "name" => "clli_added_key_" . Str::random('8'),
-            "key" => $key,
-            "username" => $this->siteIsolatedName()
+            'name' => 'clli_added_key_'.Str::random('8'),
+            'key' => $key,
+            'username' => $this->siteIsolatedName(),
         ];
         var_dump($payload);
         try {
             $this->forge->createSSHKey($this->serverId, $payload);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
     }
 
     private function installEmptyRepo()
     {
         $payload = [
-            "provider" => "github",
-            "repository" => "lamalamaNL/empty",
-            "branch" => "main",
-            "composer" => false
+            'provider' => 'github',
+            'repository' => 'lamalamaNL/empty',
+            'branch' => 'main',
+            'composer' => false,
         ];
         try {
             $this->forge->installGitRepositoryOnSite($this->serverId, $this->siteId(), $payload);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
 
     }
@@ -489,11 +499,11 @@ class CreateStaging extends BaseCommand
     {
         $this->runCommandViaApi(['command' => 'pwd']);
         $commands = [
-            'cd $FORGE_SITE_PATH/public/wp-content/themes/pum' ,
+            'cd $FORGE_SITE_PATH/public/wp-content/themes/pum',
             'npm install',
             'npm run build',
         ];
-        echo(collect($commands)->implode(' && '));
+        echo collect($commands)->implode(' && ');
         $output = $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
         var_dump($output);
     }
@@ -501,21 +511,19 @@ class CreateStaging extends BaseCommand
     private function migrateLocalDatabase()
     {
         $localUrl = exec('wp option get siteurl');
-        $remoteUrl = 'https://' . $this->fullDomain();
+        $remoteUrl = 'https://'.$this->fullDomain();
 
         $commands = [
-            "wp migratedb push $remoteUrl " .
-            escapeshellarg($migrateKey) .
-            " --find=" . escapeshellarg($localUrl) .
-            " --replace=" . escapeshellarg($remoteUrl) .
-            " --media=all " .
-            " --plugin-files=all"
+            "wp migratedb push $remoteUrl ".
+            escapeshellarg($migrateKey).
+            ' --find='.escapeshellarg($localUrl).
+            ' --replace='.escapeshellarg($remoteUrl).
+            ' --media=all '.
+            ' --plugin-files=all',
         ];
 
-        die(collect($commands)->implode(' && '));
+        exit(collect($commands)->implode(' && '));
 
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
     }
-
-
 }
