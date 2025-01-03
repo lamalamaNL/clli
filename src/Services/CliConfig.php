@@ -8,12 +8,18 @@ class CliConfig
 {
     private $configFilePath;
 
+    /**
+     * Initialize the config file path and create if needed
+     */
     public function __construct()
     {
         $this->configFilePath = $this->resolvePath('~/.clli/config.json');
         $this->initializeFile();
     }
 
+    /**
+     * Resolve the full path, expanding ~ to home directory
+     */
     private function resolvePath($path)
     {
         if (strpos($path, '~') === 0) {
@@ -28,6 +34,9 @@ class CliConfig
         return $path;
     }
 
+    /**
+     * Create the config directory and file if they don't exist
+     */
     private function initializeFile()
     {
         $dir = dirname($this->configFilePath);
@@ -39,7 +48,9 @@ class CliConfig
         }
     }
 
-    // Read JSON file and decode to PHP array
+    /**
+     * Read the config file contents
+     */
     public function read()
     {
         if (! file_exists($this->configFilePath)) {
@@ -51,14 +62,18 @@ class CliConfig
         return json_decode($jsonContent, true);
     }
 
-    // Write PHP array to JSON file
+    /**
+     * Write data to the config file
+     */
     public function write($data)
     {
         $jsonContent = json_encode($data, JSON_PRETTY_PRINT);
         file_put_contents($this->configFilePath, $jsonContent);
     }
 
-    // Get value by key from JSON file
+    /**
+     * Get a value from the config by key
+     */
     public function get($key)
     {
         $data = $this->read();
@@ -66,7 +81,9 @@ class CliConfig
         return isset($data[$key]) ? $data[$key] : null;
     }
 
-    // Set value by key in JSON file
+    /**
+     * Set a value in the config by key
+     */
     public function set($key, $value)
     {
         $data = $this->read();
@@ -74,7 +91,9 @@ class CliConfig
         $this->write($data);
     }
 
-    // Delete value by key in JSON file
+    /**
+     * Delete a value from the config by key
+     */
     public function delete($key)
     {
         $data = $this->read();
