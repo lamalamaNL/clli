@@ -127,18 +127,20 @@ class CreateStaging extends BaseCommand
         info('SSL certificate installed');
         spin(fn () => $this->installSsh(), 'Installing your SSH key');
         info('SSH key installed');
-        spin(fn () => $this->installEmptyRepo(), 'Installing empty repo');
-        info('Empty repo installed');
+        spin(fn () => $this->installEmptyRepo(), 'Installing empty repository');
+        info('Empty repository installed');
         spin(fn () => $this->installWordpress(), 'Installing wordpress');
-        info('Wordpress installed');
+        info('WordPress installed');
         spin(fn () => $this->installPlugins(), 'Installing plugins');
         info('Plugins installed');
         spin(fn () => $this->installTheme(), 'Installing theme');
         info('Theme installed');
-        spin(fn () => $this->getMigrateDbConnectionKey(), 'Getting Migrate DB connection key');
-        info('Migrate DB connection key installed');
+        spin(fn () => $this->getMigrateDbConnectionKey(), 'Retrieving Migrate DB connection key');
+        info('Migrate DB connection key retrieved');
         spin(fn () => $this->migrateLocalDatabase(), 'Migrating local database to staging');
         info('Local database migrated');
+        spin(fn () => $this->enableQuickDeploy(), 'Enabling quick deploy');
+        info('Quick deploy enabled');
         spin(fn () => $this->setDeployscriptAndDeploy(), 'Deploying project');
         info('Project deployed');
 
@@ -351,7 +353,10 @@ class CreateStaging extends BaseCommand
             // Install plugins and activate
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
             'wp_migrate_license_key='.$this->getMigrateDbLicenseKey(),
-            'wp migrate setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
+            'wp migratedb setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
+            'wp migratedb setting update pull on',
+            'wp migratedb setting update push on',
+            'wp migratedb setting get connection-key',
             'wp plugin update --all',
         ];
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
@@ -384,13 +389,16 @@ class CreateStaging extends BaseCommand
     /**
      * Run a command via the Forge API
      */
-    private function runCommandViaApi(string $command)
+    private function runCommandViaApi(array $command)
     {
         $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
 
-        foreach ($siteCommand->output as $line) {
-            info('Result: '.$line);
-        }
+        info('===============');
+        info(print_r($siteCommand, true));
+
+        // foreach ($siteCommand->output as $line) {
+        //     info('Result: '.$line);
+        // }
     }
 
     /**
@@ -400,8 +408,6 @@ class CreateStaging extends BaseCommand
     {
         $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
         $result = $this->forge->deploySite($this->serverId, $this->siteId());
-
-        info(print_r($result, true));
 
         return $result;
     }
@@ -738,7 +744,38 @@ class CreateStaging extends BaseCommand
      */
     private function getMigrateDbConnectionKey()
     {
-        $this->runCommandViaApi(['command' => 'wp migratedb setting get connection-key']);
+        $command = ['command' => 'cd '.$this->fullDomain().'/public && wp migratedb setting get connection-key'];
+
+        try {
+            info($this->serverId);
+            info($this->siteId());
+            info(print_r($command, true));
+
+            $result = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
+
+            $siteCommand = $result;
+
+            // Wait for command to complete
+            while ($siteCommand->status === 'running' || $siteCommand->status === 'waiting') {
+                sleep(1);
+                $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $siteCommand->id);
+                $siteCommand = $result[0];
+
+                info(print_r($result, true));
+            }
+
+            if ($siteCommand->status === 'finished') {
+                // Extract connection key from output
+                $output = trim($siteCommand->output);
+                if (! empty($output)) {
+                    return $output;
+                }
+            }
+
+            throw new \RuntimeException('Failed to get connection key: '.($siteCommand->output ?? 'No output'));
+        } catch (\Exception $e) {
+            throw new \RuntimeException('Error getting connection key: '.$e->getMessage());
+        }
     }
 
     /**
@@ -748,7 +785,7 @@ class CreateStaging extends BaseCommand
     {
         $localUrl = exec('wp option get siteurl');
         $remoteUrl = 'https://'.$this->fullDomain();
-        $migrateKey = 'todotodo';
+        $migrateKey = $this->getMigrateDbConnectionKey();
 
         $commands = [
             "wp migratedb push $remoteUrl ".
@@ -759,8 +796,14 @@ class CreateStaging extends BaseCommand
             ' --plugin-files=all',
         ];
 
-        exit(collect($commands)->implode(' && '));
+        return $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+    }
 
-        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+    /**
+     * Enable quick deploy
+     */
+    private function enableQuickDeploy()
+    {
+        return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
     }
 }
