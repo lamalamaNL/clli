@@ -3,7 +3,6 @@
 namespace LamaLama\Clli\Console;
 
 use Illuminate\Support\Arr;
-use Illuminate\Support\Composer;
 use Illuminate\Support\Str;
 use LamaLama\Clli\Console\Services\CliConfig;
 use Laravel\Forge\Exceptions\ValidationException;
@@ -23,13 +22,6 @@ use function Laravel\Prompts\text;
 class CreateStaging extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
-
-    /**
-     * The Composer instance.
-     *
-     * @var \Illuminate\Support\Composer
-     */
-    protected $composer;
 
     protected InputInterface $input;
 
@@ -106,70 +98,32 @@ class CreateStaging extends BaseCommand
         $this->subdomain = $this->getSubdomain();
         $this->repo = $this->calulateRepo();
 
-        // Setup the site
-        $sites = $this->forge->sites($this->serverId);
-
-        /* TODO:
-        - Get all setup van rules from LamaPressNewCommand to install wordpress
-        - Rewrite wp-config with DB credentials
-        - Create a summary of what is going to happen
-        - Do pre-checks
-        - Check which branch is checked out and will be deployed
-        */
-
         $startTime = microtime(true);
         $initialStartTime = microtime(true);
 
-        spin(fn () => $this->createSite(), 'Creating site');
-        info('Site created ('.round(microtime(true) - $startTime, 2).'s)');
+        $steps = [
+            ['checkThemeFolder', 'Theme folder check'],
+            ['createSite', 'Creating site'],
+            ['createDatabase', 'Creating database'],
+            ['updateCloudflareDns', 'Updating Cloudflare DNS'],
+            ['installSsl', 'Installing SSL certificate'],
+            ['installSsh', 'Installing your SSH key'],
+            ['installEmptyRepo', 'Installing empty repository'],
+            ['installWordpress', 'Installing WordPress'],
+            ['installPlugins', 'Installing plugins'],
+            ['installTheme', 'Installing theme'],
+            ['getMigrateDbConnectionKey', 'Retrieving Migrate DB connection key'],
+            ['migrateLocalDatabase', 'Migrating local to staging'],
+            ['setBuildScriptAndDeploy', 'Building project'],
+            ['enableQuickDeploy', 'Enabling quick deploy'],
+            ['setFinalDeploymentScript', 'Setting final deployment script'],
+        ];
 
-        $startTime = microtime(true);
-        spin(fn () => $this->createDatabase(), 'Creating database');
-        info('Database created ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->updateCloudflareDns(), 'Updating Cloudflare DNS');
-        info('Cloudflare DNS updated ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->installSsl(), 'Installing SSL certificate');
-        info('SSL certificate installed ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->installSsh(), 'Installing your SSH key');
-        info('SSH key installed ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->installEmptyRepo(), 'Installing empty repository');
-        info('Empty repository installed ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->installWordpress(), 'Installing WordPress');
-        info('WordPress installed ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->installPlugins(), 'Installing plugins');
-        info('Plugins installed ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->installTheme(), 'Installing theme');
-        info('Theme installed ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->getMigrateDbConnectionKey(), 'Retrieving Migrate DB connection key');
-        info('Migrate DB connection key retrieved ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->migrateLocalDatabase(), 'Migrating local to staging');
-        info('Local migrated to staging ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->setDeployScriptAndDeploy(), 'Building project');
-        info('Project built ('.round(microtime(true) - $startTime, 2).'s)');
-
-        $startTime = microtime(true);
-        spin(fn () => $this->enableQuickDeploy(), 'Enabling quick deploy');
-        info('Quick deploy enabled ('.round(microtime(true) - $startTime, 2).'s)');
+        foreach ($steps as [$method, $message]) {
+            $startTime = microtime(true);
+            spin(fn () => $this->$method(), $message);
+            info("✅ $message completed (".round(microtime(true) - $startTime, 2).'s)');
+        }
 
         info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
 
@@ -211,6 +165,18 @@ class CreateStaging extends BaseCommand
     }
 
     /**
+     * Check if the theme folder exists
+     */
+    private function checkThemeFolder()
+    {
+        if (! str_contains(getcwd(), 'wp-content/themes/')) {
+            throw new \RuntimeException('Theme folder not found, run this command from the theme folder');
+        }
+
+        return true;
+    }
+
+    /**
      * Create a new site on Forge
      */
     private function createSite()
@@ -222,7 +188,6 @@ class CreateStaging extends BaseCommand
             'directory' => '/public',
             'isolated' => true,
             'username' => $this->siteIsolatedName(),
-            //            "database" => "site_com_db",
             'php_version' => 'php83',
         ];
 
@@ -308,33 +273,6 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Validate the DNS record
-     */
-    private function validateDnsRecord(): bool
-    {
-        // Allow some time for DNS propagation
-        sleep(5);
-
-        $dnsRecord = dns_get_record($this->fullDomain(), DNS_A);
-
-        if (empty($dnsRecord)) {
-            $this->output->writeln('DNS record not found');
-
-            return false;
-        }
-
-        foreach ($dnsRecord as $record) {
-            if ($record['type'] === 'A' && $record['ip'] === $this->serverIp()) {
-                return true;
-            }
-        }
-
-        $this->output->writeln('DNS record found but IP does not match server IP');
-
-        return false;
-    }
-
-    /**
      * Install SSL certificate
      */
     private function installSsl()
@@ -342,9 +280,7 @@ class CreateStaging extends BaseCommand
         try {
             return $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), ['domains' => [$this->fullDomain()]], true);
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
-            exit();
+            throw new \RuntimeException('Error installing SSL: '.$e->getMessage());
         }
     }
 
@@ -353,16 +289,16 @@ class CreateStaging extends BaseCommand
      */
     private function installWordpress()
     {
-        $repoProjectName = explode('/', $this->repo)[1];
+        $themeFolderName = explode('/', $this->repo)[1];
 
         $commands = [
             // Install WordPress
-            'cd '.$this->fullDomain(),
+            'cd $FORGE_SITE_PATH',
             'mkdir public',
             'cd public',
             'wp core download',
             'wp config create --dbname="'.$this->dbName().'" --dbuser="'.$this->dbUsername().'" --dbpass="'.$this->dbPassword().'" --dbhost="127.0.0.1" --dbprefix=wp_',
-            'wp core install --url="https://'.$this->fullDomain().'" --title="'.ucfirst($repoProjectName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
+            'wp core install --url="https://'.$this->fullDomain().'" --title="'.ucfirst($themeFolderName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
         ];
 
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
@@ -374,18 +310,21 @@ class CreateStaging extends BaseCommand
     private function installPlugins()
     {
         $commands = [
-            'cd '.$this->fullDomain().'/public',
+            // Go to site root
+            'cd $FORGE_SITE_PATH/public',
+
             // Delete plugins
             'wp plugin delete akismet',
             'wp plugin delete hello',
 
-            // Install plugins and activate
+            // Install WP Migrate
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
             'wp_migrate_license_key='.$this->getMigrateDbLicenseKey(),
             'wp migratedb setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
             'wp migratedb setting update pull on',
             'wp migratedb setting update push on',
-            'wp migratedb setting get connection-key',
+
+            // Update all plugins
             'wp plugin update --all',
         ];
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
@@ -396,15 +335,15 @@ class CreateStaging extends BaseCommand
      */
     private function installTheme()
     {
-        $repoProjectName = explode('/', $this->repo)[1];
-        $commands = [
-            // Delete plugins
-            'cd '.$this->fullDomain().'/public',
+        $themeFolderName = explode('/', $this->repo)[1];
 
-            // Clone Lamapress WP boilerplate
-            'cd wp-content/themes',
-            'git clone --depth=1 git@github.com:lamalamaNL/'.$repoProjectName.'.git '.$repoProjectName,
-            'wp theme activate '.$repoProjectName,
+        $commands = [
+            // Go to themes folder
+            'cd $FORGE_SITE_PATH/public/wp-content/themes',
+
+            // Clone project theme
+            'git clone --depth=1 git@github.com:lamalamaNL/'.$themeFolderName.'.git '.$themeFolderName,
+            'wp theme activate '.$themeFolderName,
 
             // Delete default themes
             'wp theme delete twentytwentythree',
@@ -536,7 +475,7 @@ class CreateStaging extends BaseCommand
             return $this->db_password;
         }
 
-        return $this->db_password = Str::random(14);
+        return $this->db_password = Str::random(16);
     }
 
     /**
@@ -556,10 +495,6 @@ class CreateStaging extends BaseCommand
      */
     private function webdir()
     {
-        if (! $this->site) {
-            $this->site = $this->forge->site($this->serverId, '2530605');
-        }
-
         return rtrim($this->site->directory, '/');
     }
 
@@ -568,13 +503,7 @@ class CreateStaging extends BaseCommand
      */
     private function siteId()
     {
-        if (! $this->site) {
-            $this->site = $this->forge->site($this->serverId, '2530605');
-        }
-
         return $this->site->id;
-        // die('No site available');
-        // TEMP FOR TESTING: Needs to asked
     }
 
     /**
@@ -667,35 +596,7 @@ class CreateStaging extends BaseCommand
             return $this->wpUserEmail;
         }
 
-        return $this->wpUserEmail = 'edwin@lamalama.nl';
-    }
-
-    /**
-     * Get the private SSH key
-     */
-    private function getPrivateKey(): ?string
-    {
-        $ssh_key_path = getenv('HOME').'/.ssh/id_rsa';
-
-        // Check if the file exists
-        if (file_exists($ssh_key_path)) {
-            // Read the contents of the file
-            $ssh_key = file_get_contents($ssh_key_path);
-
-            if ($ssh_key !== false) {
-                // Output the SSH key
-                return $ssh_key;
-            } else {
-                // Error reading the file
-                return null;
-            }
-        } else {
-            // File does not exist
-            echo 'Error: SSH key file not found at '.$ssh_key_path;
-
-            return null;
-        }
-
+        return $this->wpUserEmail = 'wordpress@lamalama.nl';
     }
 
     /**
@@ -748,17 +649,54 @@ class CreateStaging extends BaseCommand
     /**
      * Set deployment script and deploy
      */
-    private function setDeployScriptAndDeploy()
+    private function setBuildScriptAndDeploy()
     {
+        $themeFolderName = explode('/', $this->repo)[1];
+
         $commands = [
-            'cd '.$this->fullDomain().'/public/wp-content/themes/'.$this->subdomain,
+            // Go to theme folder
+            'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
+
+            // Install dependencies
             'npm install',
+
+            // Build theme
             'npm run build',
         ];
 
-        // TO DO, add git pull
-
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+    }
+
+    /**
+     * Set the final deployment script
+     */
+    private function setFinalDeploymentScript()
+    {
+        $themeFolderName = explode('/', $this->repo)[1];
+
+        $commands = [
+            // Go to theme folder
+            'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
+
+            // Reset hard to origin branch
+            'git reset --hard origin/$FORGE_SITE_BRANCH',
+
+            // Pull origin branch
+            'git pull origin $FORGE_SITE_BRANCH',
+
+            // Install dependencies
+            'npm install',
+
+            // Build theme
+            'npm run build',
+
+            // Restart FPM
+            'echo \'Restarting FPM...\'; sudo -S service $FORGE_PHP_FPM reload ) 9>/tmp/fpmlock',
+        ];
+
+        $command = implode("\n", $commands);
+
+        $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
     }
 
     /**
