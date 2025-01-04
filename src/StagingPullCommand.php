@@ -116,9 +116,9 @@ class StagingPullCommand extends BaseCommand
             'wp theme activate '.$name,
 
             // Delete default themes
-            'wp theme delete twentytwentytwo',
             'wp theme delete twentytwentythree',
             'wp theme delete twentytwentyfour',
+            'wp theme delete twentytwentyfive',
 
             // Go to theme folder
             'cd '.$name,

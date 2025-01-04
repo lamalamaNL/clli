@@ -135,6 +135,8 @@ class CreateStaging extends BaseCommand
         info('Plugins installed');
         spin(fn () => $this->installTheme(), 'Installing theme');
         info('Theme installed');
+        spin(fn () => $this->getMigrateDbConnectionKey(), 'Getting Migrate DB connection key');
+        info('Migrate DB connection key installed');
         spin(fn () => $this->migrateLocalDatabase(), 'Migrating local database to staging');
         info('Local database migrated');
         spin(fn () => $this->setDeployscriptAndDeploy(), 'Deploying project');
@@ -261,20 +263,16 @@ class CreateStaging extends BaseCommand
                 false // Proxied through Cloudflare
             );
 
-            if ($result) {
-                $this->output->writeln('DNS record created successfully');
-
-                return true;
+            if (! $result) {
+                throw new \RuntimeException('Failed to create DNS record');
             }
 
-            $this->output->writeln('Failed to create DNS record');
+            $this->output->writeln('DNS record created successfully');
 
-            return false;
+            return true;
 
         } catch (\Exception $e) {
-            $this->output->writeln('Error updating DNS: '.$e->getMessage());
-
-            return false;
+            throw new \RuntimeException('Error updating DNS: '.$e->getMessage());
         }
     }
 
@@ -351,8 +349,10 @@ class CreateStaging extends BaseCommand
             'wp plugin delete hello',
 
             // Install plugins and activate
-            'wp plugin update --all',
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
+            'wp_migrate_license_key='.$this->getMigrateDbLicenseKey(),
+            'wp migrate setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
+            'wp plugin update --all',
         ];
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
     }
@@ -371,36 +371,38 @@ class CreateStaging extends BaseCommand
             'cd wp-content/themes',
             'git clone --depth=1 git@github.com:lamalamaNL/'.$repoProjectName.'.git '.$repoProjectName,
             'wp theme activate '.$repoProjectName,
+
+            // Delete default themes
+            'wp theme delete twentytwentythree',
+            'wp theme delete twentytwentyfour',
+            'wp theme delete twentytwentyfive',
         ];
+
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
     }
 
     /**
      * Run a command via the Forge API
      */
-    private function runCommandViaApi($command)
+    private function runCommandViaApi(string $command)
     {
-        $this->output->writeln('Run command: '.$command['command']);
         $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
-        var_dump($siteCommand->status);
-        var_dump($siteCommand->output);
-        foreach ($siteCommand->output as $line) {
-            $this->output->writeln('Result: '.$line);
-        }
 
+        foreach ($siteCommand->output as $line) {
+            info('Result: '.$line);
+        }
     }
 
     /**
      * Run a command via the deployment script
      */
-    private function runCommandViaDeployScript($command)
+    private function runCommandViaDeployScript(string $command)
     {
-        $this->output->writeln('Run command: '.$command);
         $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
         $result = $this->forge->deploySite($this->serverId, $this->siteId());
-        echo 'Deployment result:? ';
 
-        // var_dump($result);
+        info(print_r($result, true));
+
         return $result;
     }
 
@@ -432,6 +434,21 @@ class CreateStaging extends BaseCommand
         $this->cfg->set('forge_token', $forgeToken);
 
         return $forgeToken;
+    }
+
+    /**
+     * Get the Migrate DB license key
+     */
+    private function getMigrateDbLicenseKey()
+    {
+        $migrateDbLicenseKey = $this->cfg->get('wp_migrate_license_key');
+        if ($migrateDbLicenseKey) {
+            return $migrateDbLicenseKey;
+        }
+        $migrateDbLicenseKey = text(label: 'We need a Migrate DB license key for this command. Please provide a Migrate DB license key', required: true);
+        $this->cfg->set('wp_migrate_license_key', $migrateDbLicenseKey);
+
+        return $migrateDbLicenseKey;
     }
 
     /**
@@ -489,8 +506,7 @@ class CreateStaging extends BaseCommand
             return $this->db_password;
         }
 
-        return $this->db_password = 'Edb1ZQvLR2mfLj';
-        //        return $this->db_password = Str::random(14);
+        return $this->db_password = Str::random(14);
     }
 
     /**
@@ -688,6 +704,7 @@ class CreateStaging extends BaseCommand
             'branch' => 'main',
             'composer' => false,
         ];
+
         try {
             $this->forge->installGitRepositoryOnSite($this->serverId, $this->siteId(), $payload);
         } catch (ValidationException $e) {
@@ -704,14 +721,24 @@ class CreateStaging extends BaseCommand
     private function setDeployscriptAndDeploy()
     {
         $this->runCommandViaApi(['command' => 'pwd']);
+
         $commands = [
             'cd $FORGE_SITE_PATH/public/wp-content/themes/pum',
             'npm install',
             'npm run build',
         ];
+
         echo collect($commands)->implode(' && ');
         $output = $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
         var_dump($output);
+    }
+
+    /**
+     * Get the Migrate DB connection key
+     */
+    private function getMigrateDbConnectionKey()
+    {
+        $this->runCommandViaApi(['command' => 'wp migratedb setting get connection-key']);
     }
 
     /**
@@ -721,6 +748,7 @@ class CreateStaging extends BaseCommand
     {
         $localUrl = exec('wp option get siteurl');
         $remoteUrl = 'https://'.$this->fullDomain();
+        $migrateKey = 'todotodo';
 
         $commands = [
             "wp migratedb push $remoteUrl ".
