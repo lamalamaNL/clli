@@ -117,32 +117,61 @@ class CreateStaging extends BaseCommand
         - Check which branch is checked out and will be deployed
         */
 
+        $startTime = microtime(true);
+        $initialStartTime = microtime(true);
+
         spin(fn () => $this->createSite(), 'Creating site');
-        info('Site created');
+        info('Site created ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->createDatabase(), 'Creating database');
-        info('Database created');
+        info('Database created ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->updateCloudflareDns(), 'Updating Cloudflare DNS');
-        info('Cloudflare DNS updated');
+        info('Cloudflare DNS updated ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->installSsl(), 'Installing SSL certificate');
-        info('SSL certificate installed');
+        info('SSL certificate installed ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->installSsh(), 'Installing your SSH key');
-        info('SSH key installed');
+        info('SSH key installed ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->installEmptyRepo(), 'Installing empty repository');
-        info('Empty repository installed');
-        spin(fn () => $this->installWordpress(), 'Installing wordpress');
-        info('WordPress installed');
+        info('Empty repository installed ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
+        spin(fn () => $this->installWordpress(), 'Installing WordPress');
+        info('WordPress installed ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->installPlugins(), 'Installing plugins');
-        info('Plugins installed');
+        info('Plugins installed ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->installTheme(), 'Installing theme');
-        info('Theme installed');
+        info('Theme installed ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->getMigrateDbConnectionKey(), 'Retrieving Migrate DB connection key');
-        info('Migrate DB connection key retrieved');
-        spin(fn () => $this->migrateLocalDatabase(), 'Migrating local database to staging');
-        info('Local database migrated');
+        info('Migrate DB connection key retrieved ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
+        spin(fn () => $this->migrateLocalDatabase(), 'Migrating local to staging');
+        info('Local migrated to staging ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
+        spin(fn () => $this->setDeployScriptAndDeploy(), 'Building project');
+        info('Project built ('.round(microtime(true) - $startTime, 2).'s)');
+
+        $startTime = microtime(true);
         spin(fn () => $this->enableQuickDeploy(), 'Enabling quick deploy');
-        info('Quick deploy enabled');
-        spin(fn () => $this->setDeployscriptAndDeploy(), 'Deploying project');
-        info('Project deployed');
+        info('Quick deploy enabled ('.round(microtime(true) - $startTime, 2).'s)');
+
+        info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
 
         // TODO: Een table+ connection string uitspugen voor makelijk connecten van local naar remote db
 
@@ -393,12 +422,7 @@ class CreateStaging extends BaseCommand
     {
         $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
 
-        info('===============');
-        info(print_r($siteCommand, true));
-
-        // foreach ($siteCommand->output as $line) {
-        //     info('Result: '.$line);
-        // }
+        return $siteCommand;
     }
 
     /**
@@ -724,19 +748,17 @@ class CreateStaging extends BaseCommand
     /**
      * Set deployment script and deploy
      */
-    private function setDeployscriptAndDeploy()
+    private function setDeployScriptAndDeploy()
     {
-        $this->runCommandViaApi(['command' => 'pwd']);
-
         $commands = [
-            'cd $FORGE_SITE_PATH/public/wp-content/themes/pum',
+            'cd '.$this->fullDomain().'/public/wp-content/themes/'.$this->subdomain,
             'npm install',
             'npm run build',
         ];
 
-        echo collect($commands)->implode(' && ');
-        $output = $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
-        var_dump($output);
+        // TO DO, add git pull
+
+        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
     }
 
     /**
@@ -744,13 +766,9 @@ class CreateStaging extends BaseCommand
      */
     private function getMigrateDbConnectionKey()
     {
-        $command = ['command' => 'cd '.$this->fullDomain().'/public && wp migratedb setting get connection-key'];
+        $command = ['command' => 'cd public && wp migratedb setting get connection-key'];
 
         try {
-            info($this->serverId);
-            info($this->siteId());
-            info(print_r($command, true));
-
             $result = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
 
             $siteCommand = $result;
@@ -760,8 +778,6 @@ class CreateStaging extends BaseCommand
                 sleep(1);
                 $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $siteCommand->id);
                 $siteCommand = $result[0];
-
-                info(print_r($result, true));
             }
 
             if ($siteCommand->status === 'finished') {
