@@ -116,10 +116,13 @@ class CreateStaging extends BaseCommand
             ['setFinalDeploymentScript', 'Setting final deployment script'],
         ];
 
-        foreach ($steps as [$method, $message]) {
+        $totalSteps = count($steps);
+
+        foreach ($steps as $index => [$method, $message]) {
             $startTime = microtime(true);
-            spin(fn () => $this->$method(), $message);
-            info("✅ $message completed (".round(microtime(true) - $startTime, 2).'s)');
+            info('<fg=white>Step '.($index + 1).'/'.$totalSteps.': '.$message.'</>');
+            spin(fn () => $this->$method(), 'in progress');
+            info("✅ $message completed (".round(microtime(true) - $startTime, 2).'s)', false);
         }
 
         info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
