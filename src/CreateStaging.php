@@ -120,8 +120,13 @@ class CreateStaging extends BaseCommand
 
         foreach ($steps as $index => [$method, $message]) {
             $startTime = microtime(true);
-            info('<fg=white>Step '.($index + 1).'/'.$totalSteps.': '.$message.'</>');
-            spin(fn () => $this->$method(), 'in progress');
+            $message = 'Step '.($index + 1).'/'.$totalSteps.': '.$message;
+
+            spin(
+                message: $message,
+                callback: fn () => $this->$method(),
+            );
+
             info("✅ $message completed (".round(microtime(true) - $startTime, 2).'s)', false);
         }
 
