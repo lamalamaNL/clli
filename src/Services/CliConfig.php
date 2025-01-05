@@ -2,8 +2,6 @@
 
 namespace LamaLama\Clli\Console\Services;
 
-use stdClass;
-
 class CliConfig
 {
     private $configFilePath;
@@ -24,6 +22,7 @@ class CliConfig
     {
         if (strpos($path, '~') === 0) {
             $homeDirectory = getenv('HOME');
+
             if ($homeDirectory) {
                 $path = $homeDirectory.substr($path, 1);
             } else {
@@ -40,11 +39,18 @@ class CliConfig
     private function initializeFile()
     {
         $dir = dirname($this->configFilePath);
+
         if (! is_dir($dir)) {
             mkdir($dir, 0777, true);
         }
+
         if (! file_exists($this->configFilePath)) {
-            file_put_contents($this->configFilePath, json_encode(new stdClass, JSON_PRETTY_PRINT));
+            $initialData = [
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            file_put_contents($this->configFilePath, json_encode($initialData, JSON_PRETTY_PRINT));
         }
     }
 
@@ -67,7 +73,9 @@ class CliConfig
      */
     public function write($data)
     {
+        $data['updated_at'] = date('Y-m-d H:i:s');
         $jsonContent = json_encode($data, JSON_PRETTY_PRINT);
+
         file_put_contents($this->configFilePath, $jsonContent);
     }
 

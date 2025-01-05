@@ -63,7 +63,7 @@ class CreateStaging extends BaseCommand
         $this
             ->setName('lamapress:staging')
             ->addArgument('subdomain', InputArgument::OPTIONAL)
-            ->setDescription('Create a staging environment and install WordPress for this project on a Forge server.');
+            ->setDescription('Create a new staging environment for a WordPress site on Laravel Forge');
     }
 
     /**
@@ -92,16 +92,13 @@ class CreateStaging extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $this->cfg = new CliConfig;
-        $this->forge = new Forge($this->getForgeToken());
-        $this->forge->setTimeout(300);
-        $this->serverId = $this->getServerId();
-        $this->subdomain = $this->getSubdomain();
-        $this->repo = $this->calulateRepo();
 
         $startTime = microtime(true);
         $initialStartTime = microtime(true);
 
         $steps = [
+            ['checkClliConfig', 'Checking CLLI config'],
+            ['initializeCommand', 'Initializing command'],
             ['checkThemeFolder', 'Theme folder check'],
             ['createSite', 'Creating site'],
             ['createDatabase', 'Creating database'],
@@ -109,7 +106,7 @@ class CreateStaging extends BaseCommand
             ['installSsl', 'Installing SSL certificate'],
             ['installSsh', 'Installing your SSH key'],
             ['installEmptyRepo', 'Installing empty repository'],
-            ['installWordpress', 'Installing WordPress'],
+            ['installWordPress', 'Installing WordPress'],
             ['installPlugins', 'Installing plugins'],
             ['installTheme', 'Installing theme'],
             ['getMigrateDbConnectionKey', 'Retrieving Migrate DB connection key'],
@@ -140,7 +137,19 @@ class CreateStaging extends BaseCommand
 
         table(['Key', 'Value'], $output);
 
-        return 1;
+        return Command::SUCCESS;
+    }
+
+    /**
+     * Initialize the command dependencies
+     */
+    private function initializeCommand(): void
+    {
+        $this->forge = new Forge($this->getForgeToken());
+        $this->forge->setTimeout(300);
+        $this->serverId = $this->getServerId();
+        $this->subdomain = $this->getSubdomain();
+        $this->repo = $this->calulateRepo();
     }
 
     /**
@@ -155,13 +164,37 @@ class CreateStaging extends BaseCommand
         $repoFromRemote = shell_exec('git config --get remote.origin.url');
         if ($repoFromRemote) {
             $repoFromRemote = str_replace('.git', '', explode(':', $repoFromRemote)[1] ?? '');
+
             if ($repoFromRemote) {
                 return $this->repo = trim($repoFromRemote);
             }
-
         }
 
         return $this->repo = 'lamalamaNL/'.trim(basename(getcwd()));
+    }
+
+    /**
+     * Check if the CLLI config is complete
+     */
+    private function checkClliConfig()
+    {
+        $requiredKeys = [
+            'forge_token' => 'Get this from forge.laravel.com/user/profile#/api',
+            'forge_server_id' => 'Found in the URL when viewing a server on forge.laravel.com',
+            'cloudflare_token' => 'Generate at dash.cloudflare.com/profile/api-tokens',
+            'cloudflare_zone_id' => 'Found in the Overview tab of your domain on dash.cloudflare.com',
+            'wp_migrate_license_key' => 'Available in your WP Migrate account at deliciousbrains.com/my-account',
+        ];
+
+        foreach ($requiredKeys as $key => $help) {
+            if (! $this->cfg->get($key)) {
+                info($help);
+                $value = text(label: "CLLI config is missing the $key key. Please provide a value", required: true);
+                $this->cfg->set($key, $value);
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -262,14 +295,11 @@ class CreateStaging extends BaseCommand
             if (! $result) {
                 throw new \RuntimeException('Failed to create DNS record');
             }
-
-            $this->output->writeln('DNS record created successfully');
-
-            return true;
-
         } catch (\Exception $e) {
             throw new \RuntimeException('Error updating DNS: '.$e->getMessage());
         }
+
+        return true;
     }
 
     /**
@@ -287,17 +317,27 @@ class CreateStaging extends BaseCommand
     /**
      * Install WordPress
      */
-    private function installWordpress()
+    private function installWordPress()
     {
         $themeFolderName = explode('/', $this->repo)[1];
 
         $commands = [
-            // Install WordPress
+            // Go to site root
             'cd $FORGE_SITE_PATH',
+
+            // Create public folder
             'mkdir public',
+
+            // Go to public folder
             'cd public',
+
+            // Download WordPress
             'wp core download',
+
+            // Create config
             'wp config create --dbname="'.$this->dbName().'" --dbuser="'.$this->dbUsername().'" --dbpass="'.$this->dbPassword().'" --dbhost="127.0.0.1" --dbprefix=wp_',
+
+            // Install WordPress
             'wp core install --url="https://'.$this->fullDomain().'" --title="'.ucfirst($themeFolderName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
         ];
 
@@ -321,7 +361,6 @@ class CreateStaging extends BaseCommand
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
             'wp_migrate_license_key='.$this->getMigrateDbLicenseKey(),
             'wp migratedb setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
-            'wp migratedb setting update pull on',
             'wp migratedb setting update push on',
 
             // Update all plugins
