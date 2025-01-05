@@ -179,11 +179,11 @@ class CreateStaging extends BaseCommand
     private function checkClliConfig()
     {
         $requiredKeys = [
-            'forge_token' => 'Get this from forge.laravel.com/user/profile#/api',
+            'forge_token' => 'Get this from https://forge.laravel.com/user/profile#/api',
             'forge_server_id' => 'Found in the URL when viewing a server on forge.laravel.com',
-            'cloudflare_token' => 'Generate at dash.cloudflare.com/profile/api-tokens',
-            'cloudflare_zone_id' => 'Found in the Overview tab of your domain on dash.cloudflare.com',
-            'wp_migrate_license_key' => 'Available in your WP Migrate account at deliciousbrains.com/my-account',
+            'cloudflare_token' => 'Generate via \'Create Token\' at https://dash.cloudflare.com/profile/api-tokens',
+            'cloudflare_zone_id' => 'Found in the Overview tab of your domain on https://dash.cloudflare.com',
+            'wp_migrate_license_key' => 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
         ];
 
         foreach ($requiredKeys as $key => $help) {
