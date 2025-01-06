@@ -24,14 +24,23 @@ class CreateStaging extends BaseCommand
     use Concerns\ConfiguresPrompts;
 
     private const DOMAIN_SUFFIX = 'lamalama.dev';
+
     private const DEFAULT_WP_ADMIN_USER = 'Lama Lama';
+
     private const DEFAULT_WP_ADMIN_EMAIL = 'wordpress@lamalama.nl';
+
     private const GITHUB_ORG = 'lamalamaNL';
+
     private const EMPTY_REPO = 'empty';
+
     private const SSH_KEY_EMAIL = 'clli@lamalama.nl';
+
     private const DB_PREFIX = 'db_';
+
     private const DB_USER_PREFIX = 'db_user_';
+
     private const SITE_USER_PREFIX = 'siteuser_';
+
     private const SSH_KEY_NAME_PREFIX = 'clli_added_key_';
 
     protected InputInterface $input;
@@ -160,7 +169,7 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Initialize the command dependencies
+     * Initialize Forge client and set required properties for site creation
      */
     private function initializeCommand(): void
     {
@@ -172,9 +181,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Calculate the repository name
+     * Determine repository name from git remote or current directory
      */
-    private function calulateRepo()
+    private function calulateRepo(): string
     {
         if ($this->repo) {
             return $this->repo;
@@ -193,9 +202,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Check if the CLLI config is complete
+     * Validate and prompt for missing CLLI configuration values
      */
-    private function checkClliConfig()
+    private function checkClliConfig(): bool
     {
         $requiredKeys = [
             'forge_token' => 'Get this from https://forge.laravel.com/user/profile#/api',
@@ -217,9 +226,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Check if the theme folder exists
+     * Verify command is run from within a WordPress theme directory
      */
-    private function checkThemeFolder()
+    private function checkThemeFolder(): bool
     {
         if (! str_contains(getcwd(), 'wp-content/themes/')) {
             throw new \RuntimeException('Theme folder not found, run this command from the theme folder');
@@ -229,9 +238,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Create a new site on Forge
+     * Create new isolated PHP site on Forge with specified configuration
      */
-    private function createSite()
+    private function createSite(): Site
     {
         $config = [
             'domain' => $this->fullDomain(),
@@ -255,9 +264,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Create a new database on Forge
+     * Create MySQL database and user for the WordPress installation
      */
-    private function createDatabase()
+    private function createDatabase(): void
     {
         try {
             $this->forge->createDatabase($this->serverId, [
@@ -273,9 +282,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Update the Cloudflare DNS record
+     * Add DNS A record in Cloudflare pointing subdomain to server IP
      */
-    public function updateCloudflareDns()
+    public function updateCloudflareDns(): bool
     {
         // Get Cloudflare credentials from config
         $cfToken = $this->cfg->get('cloudflare_token');
@@ -322,9 +331,9 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Install SSL certificate
+     * Request and install Let's Encrypt SSL certificate
      */
-    private function installSsl()
+    private function installSsl(): mixed
     {
         try {
             return $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), ['domains' => [$this->fullDomain()]], true);
@@ -334,7 +343,7 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Install WordPress
+     * Download and configure fresh WordPress installation
      */
     private function installWordPress()
     {
@@ -364,7 +373,7 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Install WordPress plugins
+     * Install and configure required WordPress plugins
      */
     private function installPlugins()
     {
@@ -389,7 +398,7 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Install WordPress theme
+     * Clone theme repository and remove default WordPress themes
      */
     private function installTheme()
     {
@@ -415,7 +424,7 @@ class CreateStaging extends BaseCommand
     /**
      * Run a command via the Forge API
      */
-    private function runCommandViaApi(array $command)
+    private function runCommandViaApi(array $command): mixed
     {
         $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
 
@@ -425,7 +434,7 @@ class CreateStaging extends BaseCommand
     /**
      * Run a command via the deployment script
      */
-    private function runCommandViaDeployScript(string $command)
+    private function runCommandViaDeployScript(string $command): mixed
     {
         $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
         $result = $this->forge->deploySite($this->serverId, $this->siteId());
@@ -436,7 +445,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the server ID
      */
-    private function getServerId()
+    private function getServerId(): string
     {
         $serverId = $this->cfg->get('forge_server_id');
         if ($serverId) {
@@ -451,7 +460,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the Forge API token
      */
-    private function getForgeToken()
+    private function getForgeToken(): string
     {
         $forgeToken = $this->cfg->get('forge_token');
         if ($forgeToken) {
@@ -466,7 +475,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the Migrate DB license key
      */
-    private function getMigrateDbLicenseKey()
+    private function getMigrateDbLicenseKey(): string
     {
         $migrateDbLicenseKey = $this->cfg->get('wp_migrate_license_key');
         if ($migrateDbLicenseKey) {
@@ -481,7 +490,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the subdomain
      */
-    private function getSubdomain()
+    private function getSubdomain(): string
     {
         $subdomain = $this->input->getArgument('subdomain');
         if ($subdomain) {
@@ -495,39 +504,39 @@ class CreateStaging extends BaseCommand
     /**
      * Get the full domain name
      */
-    private function fullDomain()
+    private function fullDomain(): string
     {
-        return $this->subdomain .'.'. self::DOMAIN_SUFFIX;
+        return $this->subdomain.'.'.self::DOMAIN_SUFFIX;
     }
 
     /**
      * Get the database name
      */
-    private function dbName()
+    private function dbName(): string
     {
         if ($this->db_name) {
             return $this->db_name;
         }
 
-        return $this->db_name = Str::slug(self::DB_PREFIX . $this->fullDomain(), '_');
+        return $this->db_name = Str::slug(self::DB_PREFIX.$this->fullDomain(), '_');
     }
 
     /**
      * Get the database username
      */
-    private function dbUsername()
+    private function dbUsername(): string
     {
         if ($this->db_user) {
             return $this->db_user;
         }
 
-        return $this->db_user = Str::slug(self::DB_USER_PREFIX . $this->fullDomain(), '_');
+        return $this->db_user = Str::slug(self::DB_USER_PREFIX.$this->fullDomain(), '_');
     }
 
     /**
      * Get the database password
      */
-    private function dbPassword()
+    private function dbPassword(): string
     {
         if ($this->db_password) {
             return $this->db_password;
@@ -539,19 +548,19 @@ class CreateStaging extends BaseCommand
     /**
      * Get the site's isolated username
      */
-    private function siteIsolatedName()
+    private function siteIsolatedName(): string
     {
         if ($this->siteIsolatedName) {
             return $this->siteIsolatedName;
         }
 
-        return $this->siteIsolatedName = Str::slug(self::SITE_USER_PREFIX . $this->fullDomain(), '_');
+        return $this->siteIsolatedName = Str::slug(self::SITE_USER_PREFIX.$this->fullDomain(), '_');
     }
 
     /**
      * Get the web directory path
      */
-    private function webdir()
+    private function webdir(): string
     {
         return rtrim($this->site->directory, '/');
     }
@@ -559,7 +568,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the site ID
      */
-    private function siteId()
+    private function siteId(): int
     {
         return $this->site->id;
     }
@@ -567,7 +576,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the server IP address
      */
-    private function serverIp()
+    private function serverIp(): string
     {
         if ($this->ip) {
             return $this->ip;
@@ -604,7 +613,7 @@ class CreateStaging extends BaseCommand
         } else {
             // File does not exist
             if (confirm('SSH key not found. Would you like to create a new OpenSSH key pair?')) {
-                $command = "ssh-keygen -t rsa -b 4096 -C '" . self::SSH_KEY_EMAIL . "' -f " . $ssh_key_path . " -N ''";
+                $command = "ssh-keygen -t rsa -b 4096 -C '".self::SSH_KEY_EMAIL."' -f ".$ssh_key_path." -N ''";
                 exec($command, $output, $return_value);
 
                 if ($return_value === 0) {
@@ -624,7 +633,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the WordPress admin username
      */
-    private function wpUser()
+    private function wpUser(): string
     {
         if ($this->wpUser) {
             return $this->wpUser;
@@ -636,7 +645,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the WordPress admin password
      */
-    private function wpPassword()
+    private function wpPassword(): string
     {
         if ($this->wpPassword) {
             return $this->wpPassword;
@@ -648,7 +657,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the WordPress admin email
      */
-    private function wpUserEmail()
+    private function wpUserEmail(): string
     {
         if ($this->wpUserEmail) {
             return $this->wpUserEmail;
@@ -660,7 +669,7 @@ class CreateStaging extends BaseCommand
     /**
      * Install SSH key on the server
      */
-    private function installSsh()
+    private function installSsh(): void
     {
         $key = $this->getPublicKey();
         if (! $key) {
@@ -668,7 +677,7 @@ class CreateStaging extends BaseCommand
         }
 
         $payload = [
-            'name' => self::SSH_KEY_NAME_PREFIX . Str::random('8'),
+            'name' => self::SSH_KEY_NAME_PREFIX.Str::random('8'),
             'key' => trim($key),
             'username' => $this->siteIsolatedName(),
         ];
@@ -685,11 +694,11 @@ class CreateStaging extends BaseCommand
     /**
      * Install empty repository
      */
-    private function installEmptyRepo()
+    private function installEmptyRepo(): void
     {
         $payload = [
             'provider' => 'github',
-            'repository' => self::GITHUB_ORG . '/' . self::EMPTY_REPO,
+            'repository' => self::GITHUB_ORG.'/'.self::EMPTY_REPO,
             'branch' => 'main',
             'composer' => false,
         ];
@@ -707,7 +716,7 @@ class CreateStaging extends BaseCommand
     /**
      * Set deployment script and deploy
      */
-    private function setBuildScriptAndDeploy()
+    private function setBuildScriptAndDeploy(): mixed
     {
         $themeFolderName = explode('/', $this->repo)[1];
 
@@ -728,7 +737,7 @@ class CreateStaging extends BaseCommand
     /**
      * Set the final deployment script
      */
-    private function setFinalDeploymentScript()
+    private function setFinalDeploymentScript(): void
     {
         $themeFolderName = explode('/', $this->repo)[1];
 
@@ -760,7 +769,7 @@ class CreateStaging extends BaseCommand
     /**
      * Get the Migrate DB connection key
      */
-    private function getMigrateDbConnectionKey()
+    private function getMigrateDbConnectionKey(): string
     {
         $command = ['command' => 'cd public && wp migratedb setting get connection-key'];
 
@@ -793,7 +802,7 @@ class CreateStaging extends BaseCommand
     /**
      * Migrate the local database to staging
      */
-    private function migrateLocalDatabase()
+    private function migrateLocalDatabase(): mixed
     {
         $localUrl = exec('wp option get siteurl');
         $remoteUrl = 'https://'.$this->fullDomain();
@@ -814,7 +823,7 @@ class CreateStaging extends BaseCommand
     /**
      * Enable quick deploy
      */
-    private function enableQuickDeploy()
+    private function enableQuickDeploy(): mixed
     {
         return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
     }
