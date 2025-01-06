@@ -129,11 +129,10 @@ class CreateStaging extends BaseCommand
             ['installWordPress', 'Installing WordPress'],
             ['installPlugins', 'Installing plugins'],
             ['installTheme', 'Installing theme'],
-            ['getMigrateDbConnectionKey', 'Retrieving Migrate DB connection key'],
             ['migrateLocalDatabase', 'Migrating local to staging'],
             ['setBuildScriptAndDeploy', 'Building project'],
-            ['enableQuickDeploy', 'Enabling quick deploy'],
             ['setFinalDeploymentScript', 'Setting final deployment script'],
+            ['enableQuickDeploy', 'Enabling quick deploy'],
         ];
 
         $totalSteps = count($steps);
@@ -716,7 +715,7 @@ class CreateStaging extends BaseCommand
     /**
      * Set deployment script and deploy
      */
-    private function setBuildScriptAndDeploy(): mixed
+    private function setBuildScriptAndDeploy()
     {
         $themeFolderName = explode('/', $this->repo)[1];
 
@@ -809,6 +808,10 @@ class CreateStaging extends BaseCommand
         $migrateKey = $this->getMigrateDbConnectionKey();
 
         $commands = [
+            // Go to site root
+            'cd $FORGE_SITE_PATH',
+
+            // Push database
             "wp migratedb push $remoteUrl ".
             escapeshellarg($migrateKey).
             ' --find='.escapeshellarg($localUrl).
