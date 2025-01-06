@@ -129,10 +129,10 @@ class CreateStaging extends BaseCommand
             ['installWordPress', 'Installing WordPress'],
             ['installPlugins', 'Installing plugins'],
             ['installTheme', 'Installing theme'],
-            ['migrateLocalDatabase', 'Migrating local to staging'],
+            ['migrateLocaleToRemote', 'Migrating local to remote'],
             ['setBuildScriptAndDeploy', 'Building project'],
-            ['setFinalDeploymentScript', 'Setting final deployment script'],
             ['enableQuickDeploy', 'Enabling quick deploy'],
+            ['setFinalDeploymentScript', 'Setting final deployment script'],
         ];
 
         $totalSteps = count($steps);
@@ -255,7 +255,7 @@ class CreateStaging extends BaseCommand
             $this->site = $this->forge->createSite($this->serverId, $config);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: $er")->implode("\n"));
             exit();
         }
 
@@ -799,28 +799,28 @@ class CreateStaging extends BaseCommand
     }
 
     /**
-     * Migrate the local database to staging
+     * Migrate the local environment to staging
      */
-    private function migrateLocalDatabase(): mixed
+    private function migrateLocaleToRemote(): mixed
     {
         $localUrl = exec('wp option get siteurl');
         $remoteUrl = 'https://'.$this->fullDomain();
         $migrateKey = $this->getMigrateDbConnectionKey();
 
-        $commands = [
-            // Go to site root
-            'cd $FORGE_SITE_PATH',
-
-            // Push database
-            "wp migratedb push $remoteUrl ".
+        $command = "wp migratedb push $remoteUrl ".
             escapeshellarg($migrateKey).
             ' --find='.escapeshellarg($localUrl).
             ' --replace='.escapeshellarg($remoteUrl).
             ' --media=all '.
-            ' --plugin-files=all',
-        ];
+            ' --plugin-files=all';
 
-        return $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+        exec($command, $output, $exitCode);
+
+        if ($exitCode !== 0) {
+            throw new \RuntimeException('Migration failed');
+        }
+
+        return implode("\n", $output);
     }
 
     /**
@@ -828,6 +828,12 @@ class CreateStaging extends BaseCommand
      */
     private function enableQuickDeploy(): mixed
     {
-        return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
+        try {
+            return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
+        } catch (ValidationException $e) {
+            $this->output->writeln('Validation error');
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: $er")->implode("\n"));
+            exit();
+        }
     }
 }

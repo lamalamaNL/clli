@@ -2,7 +2,7 @@
 
 namespace LamaLama\Clli\Console;
 
-use Illuminate\Support\Composer;
+use LamaLama\Clli\Console\Services\CliConfig;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -10,13 +10,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 class ShowLocalConfigCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
-
-    /**
-     * The Composer instance.
-     *
-     * @var \Illuminate\Support\Composer
-     */
-    protected $composer;
 
     /**
      * Configure the command options.
@@ -29,27 +22,21 @@ class ShowLocalConfigCommand extends BaseCommand
     }
 
     /**
-     * Interact with the user before validating the input.
-     */
-    protected function interact(InputInterface $input, OutputInterface $output): void
-    {
-        parent::interact($input, $output);
-    }
-
-    /**
      * Execute the command.
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $commands = [
-            'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
-            "cat ~/.clli/config.json | jq '.'",
-        ];
+        $config = new CliConfig();
+        $configData = $config->read();
 
-        if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
-            //
+        if (empty($configData)) {
+            $output->writeln('<error>No configuration found.</error>');
+            return Command::FAILURE;
         }
 
-        return $process->getExitCode();
+        // Format and output the JSON with indentation
+        $output->writeln(json_encode($configData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        return Command::SUCCESS;
     }
 }
