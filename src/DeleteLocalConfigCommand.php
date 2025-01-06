@@ -45,22 +45,24 @@ class DeleteLocalConfigCommand extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $config = new CliConfig();
+        $config = new CliConfig;
         $configData = $config->read();
 
         if (empty($configData)) {
             $output->writeln('<error>No configuration found.</error>');
+
             return Command::FAILURE;
         }
 
         // Remove created_at and updated_at from options since they're managed automatically
         unset($configData['created_at'], $configData['updated_at']);
-        
+
         // Create options array for select prompt
         $options = array_keys($configData);
-        
+
         if (empty($options)) {
             $output->writeln('<error>No configurable keys found.</error>');
+
             return Command::FAILURE;
         }
 
@@ -75,4 +77,4 @@ class DeleteLocalConfigCommand extends BaseCommand
 
         return Command::SUCCESS;
     }
-} 
+}

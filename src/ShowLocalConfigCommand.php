@@ -26,11 +26,12 @@ class ShowLocalConfigCommand extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $config = new CliConfig();
+        $config = new CliConfig;
         $configData = $config->read();
 
         if (empty($configData)) {
             $output->writeln('<error>No configuration found.</error>');
+
             return Command::FAILURE;
         }
 

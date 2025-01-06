@@ -15,6 +15,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\info;
+use function Laravel\Prompts\select;
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\text;
@@ -207,7 +208,7 @@ class CreateStaging extends BaseCommand
     {
         $requiredKeys = [
             'forge_token' => 'Get this from https://forge.laravel.com/user/profile#/api',
-            'forge_server_id' => 'Found in the URL when viewing a server on forge.laravel.com',
+            'forge_server_id' => 'Select a server from your Forge account',
             'cloudflare_token' => 'Generate via \'Create Token\' at https://dash.cloudflare.com/profile/api-tokens',
             'cloudflare_zone_id' => 'Found in the Overview tab of your domain on https://dash.cloudflare.com',
             'wp_migrate_license_key' => 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
@@ -216,7 +217,26 @@ class CreateStaging extends BaseCommand
         foreach ($requiredKeys as $key => $help) {
             if (! $this->cfg->get($key)) {
                 info($help);
-                $value = text(label: "CLLI config is missing the $key key. Please provide a value", required: true);
+
+                if ($key === 'forge_server_id') {
+                    $this->forge = new Forge($this->getForgeToken());
+                    $servers = $this->forge->servers();
+                    $serverChoices = [];
+                    foreach ($servers as $server) {
+                        $serverChoices[$server->id] = $server->name;
+                    }
+
+                    $value = select(
+                        label: 'Choose a server',
+                        options: $serverChoices,
+                        required: true
+                    );
+                } else {
+                    $value = text(
+                        label: "CLLI config is missing the $key key. Please provide a value",
+                        required: true
+                    );
+                }
                 $this->cfg->set($key, $value);
             }
         }
