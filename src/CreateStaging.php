@@ -23,6 +23,17 @@ class CreateStaging extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
+    private const DOMAIN_SUFFIX = 'lamalama.dev';
+    private const DEFAULT_WP_ADMIN_USER = 'Lama Lama';
+    private const DEFAULT_WP_ADMIN_EMAIL = 'wordpress@lamalama.nl';
+    private const GITHUB_ORG = 'lamalamaNL';
+    private const EMPTY_REPO = 'empty';
+    private const SSH_KEY_EMAIL = 'clli@lamalama.nl';
+    private const DB_PREFIX = 'db_';
+    private const DB_USER_PREFIX = 'db_user_';
+    private const SITE_USER_PREFIX = 'siteuser_';
+    private const SSH_KEY_NAME_PREFIX = 'clli_added_key_';
+
     protected InputInterface $input;
 
     protected OutputInterface $output;
@@ -486,7 +497,7 @@ class CreateStaging extends BaseCommand
      */
     private function fullDomain()
     {
-        return $this->subdomain.'.lamalama.dev';
+        return $this->subdomain .'.'. self::DOMAIN_SUFFIX;
     }
 
     /**
@@ -498,7 +509,7 @@ class CreateStaging extends BaseCommand
             return $this->db_name;
         }
 
-        return $this->db_name = Str::slug('db_'.$this->fullDomain(), '_');
+        return $this->db_name = Str::slug(self::DB_PREFIX . $this->fullDomain(), '_');
     }
 
     /**
@@ -510,7 +521,7 @@ class CreateStaging extends BaseCommand
             return $this->db_user;
         }
 
-        return $this->db_user = Str::slug('db_user_'.$this->fullDomain(), '_');
+        return $this->db_user = Str::slug(self::DB_USER_PREFIX . $this->fullDomain(), '_');
     }
 
     /**
@@ -534,7 +545,7 @@ class CreateStaging extends BaseCommand
             return $this->siteIsolatedName;
         }
 
-        return $this->siteIsolatedName = Str::slug('siteuser_'.$this->fullDomain(), '_');
+        return $this->siteIsolatedName = Str::slug(self::SITE_USER_PREFIX . $this->fullDomain(), '_');
     }
 
     /**
@@ -593,7 +604,7 @@ class CreateStaging extends BaseCommand
         } else {
             // File does not exist
             if (confirm('SSH key not found. Would you like to create a new OpenSSH key pair?')) {
-                $command = "ssh-keygen -t rsa -b 4096 -C 'clli@lamalama.nl' -f ".$ssh_key_path." -N ''";
+                $command = "ssh-keygen -t rsa -b 4096 -C '" . self::SSH_KEY_EMAIL . "' -f " . $ssh_key_path . " -N ''";
                 exec($command, $output, $return_value);
 
                 if ($return_value === 0) {
@@ -619,7 +630,7 @@ class CreateStaging extends BaseCommand
             return $this->wpUser;
         }
 
-        return $this->wpUser = 'Edwin';
+        return $this->wpUser = self::DEFAULT_WP_ADMIN_USER;
     }
 
     /**
@@ -643,7 +654,7 @@ class CreateStaging extends BaseCommand
             return $this->wpUserEmail;
         }
 
-        return $this->wpUserEmail = 'wordpress@lamalama.nl';
+        return $this->wpUserEmail = self::DEFAULT_WP_ADMIN_EMAIL;
     }
 
     /**
@@ -657,7 +668,7 @@ class CreateStaging extends BaseCommand
         }
 
         $payload = [
-            'name' => 'clli_added_key_'.Str::random('8'),
+            'name' => self::SSH_KEY_NAME_PREFIX . Str::random('8'),
             'key' => trim($key),
             'username' => $this->siteIsolatedName(),
         ];
@@ -678,7 +689,7 @@ class CreateStaging extends BaseCommand
     {
         $payload = [
             'provider' => 'github',
-            'repository' => 'lamalamaNL/empty',
+            'repository' => self::GITHUB_ORG . '/' . self::EMPTY_REPO,
             'branch' => 'main',
             'composer' => false,
         ];
