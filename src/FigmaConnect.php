@@ -66,7 +66,7 @@ class FigmaConnect extends BaseCommand
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $key = $input->getArgument('key');
-        
+
         $commands = [
             'type jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Installing..."; brew install jq; }',
             'jq \'. + {"figma_file_key": "'.$key.'"}\' ./.clli.json > ./.temp_clli.json && mv ./.temp_clli.json ./.clli.json',

@@ -3,12 +3,12 @@
 namespace LamaLama\Clli\Console;
 
 use Illuminate\Support\Composer;
-use function Laravel\Prompts\text;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
-
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+
+use function Laravel\Prompts\text;
 
 class StagingPullCommand extends BaseCommand
 {
@@ -50,9 +50,9 @@ class StagingPullCommand extends BaseCommand
 ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
  ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
 
-        // Pattern doesnt work yet       
+        // Pattern doesnt work yet
         $pattern = '/^https:\/\/[a-zA-Z0-9]+\.lamalama\.dev\s[a-zA-Z0-9+\-\/]+$/';
-        
+
         $input->setArgument('connection_info', text(
             label: 'What is the WP Migrate DB connection info?',
             placeholder: 'E.g. https://projectx.lamalama.dev qQSr+EVrJ83uIkME/zQiCBb4V/nVaG1dzh5vmqEq',
@@ -77,6 +77,7 @@ class StagingPullCommand extends BaseCommand
         $name = str_replace('www.', '', $name);
         $name = str_replace('.lamalama.dev', '', $name);
         $name = str_replace('.nl', '', $name);
+        $name = str_replace('.com', '', $name);
 
         $user = 'lamalama';
         $password = md5(time().uniqid());
@@ -115,23 +116,23 @@ class StagingPullCommand extends BaseCommand
             'wp theme activate '.$name,
 
             // Delete default themes
-            'wp theme delete twentytwentytwo',
             'wp theme delete twentytwentythree',
             'wp theme delete twentytwentyfour',
+            'wp theme delete twentytwentyfive',
 
             // Go to theme folder
             'cd '.$name,
-
-            // Build
-            'npm install',
-            'npm run build',
 
             // Migrate
             'wp migrate pull '.$connectionInfo.' \
                 --find='.$domain.' \
                 --replace=http://'.$name.'.test \
                 --media=all \
-                --plugin-files=all'
+                --plugin-files=all',
+
+            // Build
+            'npm install',
+            'npm run build',
         ];
 
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {

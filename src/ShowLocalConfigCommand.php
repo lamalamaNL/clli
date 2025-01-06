@@ -47,7 +47,7 @@ class ShowLocalConfigCommand extends BaseCommand
         ];
 
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
-            // 
+            //
         }
 
         return $process->getExitCode();

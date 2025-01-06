@@ -3,48 +3,76 @@
 namespace LamaLama\Clli\Console;
 
 use Illuminate\Support\Arr;
-use Illuminate\Support\Composer;
 use Illuminate\Support\Str;
 use LamaLama\Clli\Console\Services\CliConfig;
 use Laravel\Forge\Exceptions\ValidationException;
 use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Site;
-use phpseclib3\Crypt\PublicKeyLoader;
-use phpseclib3\Net\SSH2;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\info;
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
-
 use function Laravel\Prompts\text;
 
 class CreateStaging extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
-    /**
-     * The Composer instance.
-     *
-     * @var \Illuminate\Support\Composer
-     */
-    protected $composer;
+    private const DOMAIN_SUFFIX = 'lamalama.dev';
+
+    private const DEFAULT_WP_ADMIN_USER = 'Lama Lama';
+
+    private const DEFAULT_WP_ADMIN_EMAIL = 'wordpress@lamalama.nl';
+
+    private const GITHUB_ORG = 'lamalamaNL';
+
+    private const EMPTY_REPO = 'empty';
+
+    private const SSH_KEY_EMAIL = 'clli@lamalama.nl';
+
+    private const DB_PREFIX = 'db_';
+
+    private const DB_USER_PREFIX = 'db_user_';
+
+    private const SITE_USER_PREFIX = 'siteuser_';
+
+    private const SSH_KEY_NAME_PREFIX = 'clli_added_key_';
+
     protected InputInterface $input;
+
     protected OutputInterface $output;
+
     protected CliConfig $cfg;
+
     protected Forge $forge;
+
     protected ?Site $site = null;
 
     protected ?string $subdomain = null;
-    protected string $serverId = '525126';
+
+    private ?string $serverId = null;
+
     private ?string $db_password = null;
+
     private ?string $db_name = null;
+
     private ?string $db_user = null;
+
     private ?string $siteIsolatedName = null;
+
     private ?string $ip = null;
+
     private ?string $wpUser = null;
+
+    private ?string $repo = null;
+
     private ?string $wpUserEmail = null;
+
     private ?string $wpPassword = null;
 
     /**
@@ -55,7 +83,7 @@ class CreateStaging extends BaseCommand
         $this
             ->setName('lamapress:staging')
             ->addArgument('subdomain', InputArgument::OPTIONAL)
-            ->setDescription('Create a staging environment and install wordpress for this project on a forge server.');
+            ->setDescription('Create a new staging environment for a WordPress site on Laravel Forge');
     }
 
     /**
@@ -67,26 +95,15 @@ class CreateStaging extends BaseCommand
         $this->input = $input;
         $this->output = $output;
 
-
         $output->write('<fg=white>
- ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
+ ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
+░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
+░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
+░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
  ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
 
-//        if (! $input->getArgument('key')) {
-//            $input->setArgument('key', text(
-//                label: 'What is the key of your Figma file?',
-//                placeholder: 'E.g. 6sftwMKT80KxNnVjS9cZcX',
-//                required: 'The file key is required.',
-//                validate: fn ($value) => preg_match('/[^\pL\pN\-_.]/', $value) !== 0
-//                    ? 'The key may only contain letters, numbers, dashes, underscores, and periods.'
-//                    : null,
-//            ));
-//        }
     }
 
     /**
@@ -94,26 +111,47 @@ class CreateStaging extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->cfg = new CliConfig;
 
+        $startTime = microtime(true);
+        $initialStartTime = microtime(true);
 
-        $this->cfg = new CliConfig();
-        $this->forge = new Forge($this->getForgeToken());
-        $this->subdomain = $this->getSubdomain();
+        $steps = [
+            ['checkClliConfig', 'Checking CLLI config'],
+            ['initializeCommand', 'Initializing command'],
+            ['checkThemeFolder', 'Theme folder check'],
+            ['createSite', 'Creating site'],
+            ['createDatabase', 'Creating database'],
+            ['updateCloudflareDns', 'Updating Cloudflare DNS'],
+            ['installSsl', 'Installing SSL certificate'],
+            ['installSsh', 'Installing your SSH key'],
+            ['installEmptyRepo', 'Installing empty repository'],
+            ['installWordPress', 'Installing WordPress'],
+            ['installPlugins', 'Installing plugins'],
+            ['installTheme', 'Installing theme'],
+            ['migrateLocalDatabase', 'Migrating local to staging'],
+            ['setBuildScriptAndDeploy', 'Building project'],
+            ['setFinalDeploymentScript', 'Setting final deployment script'],
+            ['enableQuickDeploy', 'Enabling quick deploy'],
+        ];
 
-        # Setup the site
-        $sites = $this->forge->sites($this->serverId);
-        //TODO: Validate the site does not exist
+        $totalSteps = count($steps);
 
-//        spin(fn() => $this->createSite(), 'Creating site');
-//        spin(fn() => $this->createDatabase(), 'Creating database');
-//        spin(fn() => $this->installSsl(), 'Installing SSL certificate');
-//        spin(fn() => $this->installSsh(), 'Installing your SSH key');
-//        spin(fn() => $this->installEmptyRepo(), 'Installing empty repo');
-        spin(fn() => $this->installWordpress(), 'Installing wordpress');
-        spin(fn() => $this->migrateLocalDatabase(), 'Migrating local database to staging');
-        spin(fn() => $this->setDeployscriptAndDeploy(), 'Deploying project');
+        foreach ($steps as $index => [$method, $message]) {
+            $startTime = microtime(true);
+            $message = 'Step '.($index + 1).'/'.$totalSteps.': '.$message;
+
+            spin(
+                message: $message,
+                callback: fn () => $this->$method(),
+            );
+
+            info("✅ $message completed (".round(microtime(true) - $startTime, 2).'s)', false);
+        }
+
+        info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
+
         // TODO: Een table+ connection string uitspugen voor makelijk connecten van local naar remote db
-
 
         $output = [
             ['site domain: ', $this->fullDomain()],
@@ -123,39 +161,111 @@ class CreateStaging extends BaseCommand
             ['DB username', $this->dbUsername()],
             ['DB password', $this->dbPassword()],
         ];
+
         table(['Key', 'Value'], $output);
 
-
-
-
-
-        return 1;
+        return Command::SUCCESS;
     }
 
-    private function createSite()
+    /**
+     * Initialize Forge client and set required properties for site creation
+     */
+    private function initializeCommand(): void
+    {
+        $this->forge = new Forge($this->getForgeToken());
+        $this->forge->setTimeout(300);
+        $this->serverId = $this->getServerId();
+        $this->subdomain = $this->getSubdomain();
+        $this->repo = $this->calulateRepo();
+    }
+
+    /**
+     * Determine repository name from git remote or current directory
+     */
+    private function calulateRepo(): string
+    {
+        if ($this->repo) {
+            return $this->repo;
+        }
+
+        $repoFromRemote = shell_exec('git config --get remote.origin.url');
+        if ($repoFromRemote) {
+            $repoFromRemote = str_replace('.git', '', explode(':', $repoFromRemote)[1] ?? '');
+
+            if ($repoFromRemote) {
+                return $this->repo = trim($repoFromRemote);
+            }
+        }
+
+        return $this->repo = 'lamalamaNL/'.trim(basename(getcwd()));
+    }
+
+    /**
+     * Validate and prompt for missing CLLI configuration values
+     */
+    private function checkClliConfig(): bool
+    {
+        $requiredKeys = [
+            'forge_token' => 'Get this from https://forge.laravel.com/user/profile#/api',
+            'forge_server_id' => 'Found in the URL when viewing a server on forge.laravel.com',
+            'cloudflare_token' => 'Generate via \'Create Token\' at https://dash.cloudflare.com/profile/api-tokens',
+            'cloudflare_zone_id' => 'Found in the Overview tab of your domain on https://dash.cloudflare.com',
+            'wp_migrate_license_key' => 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
+        ];
+
+        foreach ($requiredKeys as $key => $help) {
+            if (! $this->cfg->get($key)) {
+                info($help);
+                $value = text(label: "CLLI config is missing the $key key. Please provide a value", required: true);
+                $this->cfg->set($key, $value);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Verify command is run from within a WordPress theme directory
+     */
+    private function checkThemeFolder(): bool
+    {
+        if (! str_contains(getcwd(), 'wp-content/themes/')) {
+            throw new \RuntimeException('Theme folder not found, run this command from the theme folder');
+        }
+
+        return true;
+    }
+
+    /**
+     * Create new isolated PHP site on Forge with specified configuration
+     */
+    private function createSite(): Site
     {
         $config = [
-            "domain" => $this->fullDomain(),
-            "project_type" => "php",
-            "aliases" => [],
-            "directory" => "/public",
-            "isolated" => true,
-            "username" => $this->siteIsolatedName(),
-//            "database" => "site_com_db",
-            "php_version" => "php81"
+            'domain' => $this->fullDomain(),
+            'project_type' => 'php',
+            'aliases' => [],
+            'directory' => '/public',
+            'isolated' => true,
+            'username' => $this->siteIsolatedName(),
+            'php_version' => 'php83',
         ];
 
         try {
             $this->site = $this->forge->createSite($this->serverId, $config);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
+
         return $this->site;
     }
 
-    private function createDatabase()
+    /**
+     * Create MySQL database and user for the WordPress installation
+     */
+    private function createDatabase(): void
     {
         try {
             $this->forge->createDatabase($this->serverId, [
@@ -165,102 +275,191 @@ class CreateStaging extends BaseCommand
             ]);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
     }
 
-    private function installSsl()
+    /**
+     * Add DNS A record in Cloudflare pointing subdomain to server IP
+     */
+    public function updateCloudflareDns(): bool
+    {
+        // Get Cloudflare credentials from config
+        $cfToken = $this->cfg->get('cloudflare_token');
+        if (! $cfToken) {
+            $cfToken = text(
+                label: 'We need a Cloudflare API token for DNS updates. Please provide your token:',
+                required: true
+            );
+            $this->cfg->set('cloudflare_token', $cfToken);
+        }
+
+        $cfZoneId = $this->cfg->get('cloudflare_zone_id');
+        if (! $cfZoneId) {
+            $cfZoneId = text(
+                label: 'We need your Cloudflare Zone ID for lamalama.dev:',
+                required: true
+            );
+            $this->cfg->set('cloudflare_zone_id', $cfZoneId);
+        }
+
+        try {
+            $key = new \Cloudflare\API\Auth\APIToken($cfToken);
+            $adapter = new \Cloudflare\API\Adapter\Guzzle($key);
+            $dns = new \Cloudflare\API\Endpoints\DNS($adapter);
+
+            // Create A record
+            $result = $dns->addRecord(
+                $cfZoneId,
+                'A',
+                $this->subdomain,
+                $this->serverIp(),
+                0, // Auto TTL
+                false // Proxied through Cloudflare
+            );
+
+            if (! $result) {
+                throw new \RuntimeException('Failed to create DNS record');
+            }
+        } catch (\Exception $e) {
+            throw new \RuntimeException('Error updating DNS: '.$e->getMessage());
+        }
+
+        return true;
+    }
+
+    /**
+     * Request and install Let's Encrypt SSL certificate
+     */
+    private function installSsl(): mixed
     {
         try {
             return $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), ['domains' => [$this->fullDomain()]], true);
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            throw new \RuntimeException('Error installing SSL: '.$e->getMessage());
         }
     }
 
-    private function installWordpress()
+    /**
+     * Download and configure fresh WordPress installation
+     */
+    private function installWordPress()
     {
-
-        $name = 'dorstenlesser';
+        $themeFolderName = explode('/', $this->repo)[1];
 
         $commands = [
+            // Go to site root
+            'cd $FORGE_SITE_PATH',
 
+            // Create public folder
+            'mkdir public',
+
+            // Go to public folder
+            'cd public',
+
+            // Download WordPress
+            'wp core download',
+
+            // Create config
+            'wp config create --dbname="'.$this->dbName().'" --dbuser="'.$this->dbUsername().'" --dbpass="'.$this->dbPassword().'" --dbhost="127.0.0.1" --dbprefix=wp_',
 
             // Install WordPress
-            'cd /home/siteuser_devdaglamalamadev/devdag.lamalama.dev/public',
-            'wp core download',
-            'wp config create --dbname="'.$this->dbName().'" --dbuser="'.$this->dbUsername().'" --dbpass="'.$this->dbPassword().'" --dbhost="127.0.0.1" --dbprefix=wp_',
-            'wp core install --url="http://'.$name.'.test" --title="'.ucfirst($this->wpUser()).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
+            'wp core install --url="https://'.$this->fullDomain().'" --title="'.ucfirst($themeFolderName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
+        ];
+
+        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+    }
+
+    /**
+     * Install and configure required WordPress plugins
+     */
+    private function installPlugins()
+    {
+        $commands = [
+            // Go to site root
+            'cd $FORGE_SITE_PATH/public',
 
             // Delete plugins
             'wp plugin delete akismet',
             'wp plugin delete hello',
 
-            // Install plugins and activate
+            // Install WP Migrate
             'wp plugin install https://downloads.lamapress.nl/wp-migrate-db-pro.zip --activate',
-            'wp plugin update --all',
+            'wp_migrate_license_key='.$this->getMigrateDbLicenseKey(),
+            'wp migratedb setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
+            'wp migratedb setting update push on',
 
-            // Clone Lamapress WP boilerplate
-            'cd wp-content/themes',
-            'git clone --depth=1 git@github.com:lamalamaNL/'.$name.'.git '.$name,
-            'wp theme activate '.$name,
+            // Update all plugins
+            'wp plugin update --all',
+        ];
+        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+    }
+
+    /**
+     * Clone theme repository and remove default WordPress themes
+     */
+    private function installTheme()
+    {
+        $themeFolderName = explode('/', $this->repo)[1];
+
+        $commands = [
+            // Go to themes folder
+            'cd $FORGE_SITE_PATH/public/wp-content/themes',
+
+            // Clone project theme
+            'git clone --depth=1 git@github.com:lamalamaNL/'.$themeFolderName.'.git '.$themeFolderName,
+            'wp theme activate '.$themeFolderName,
 
             // Delete default themes
-            'wp theme delete twentytwentytwo',
             'wp theme delete twentytwentythree',
             'wp theme delete twentytwentyfour',
-
-            // Go to theme folder
-//            'cd '.$name,
-
-            // Build
-            // 'npm install',
-            // 'npm run build',
-
-            // Migrate
-//            'wp_migrate_license_key=$(jq -r \'.wp_migrate_license_key\' ~/.clli/config.json)',
-//            'wp migrate setting update license $wp_migrate_license_key --user='.$email,
-//            'wp migrate pull '.$connectionInfo.' \
-//                --find='.$domain.' \
-//                --replace=http://'.$name.'.test \
-//                --media=all \
-//                --plugin-files=all'
-//            'cd '.$this->fullDomain(),
+            'wp theme delete twentytwentyfive',
         ];
 
-
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
-//        $this->runCommandViaApi( ['command' => collect($commands)->implode(' && ')]);
-
-
-
     }
 
-    private function runCommandViaApi($command)
+    /**
+     * Run a command via the Forge API
+     */
+    private function runCommandViaApi(array $command): mixed
     {
-        $this->output->writeln('Run command: ' . $command['command']);
         $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
-        var_dump($siteCommand->status);
-        var_dump($siteCommand->output);
-        foreach ($siteCommand->output as $line) {
-            $this->output->writeln('Result: ' . $line);
-        }
 
+        return $siteCommand;
     }
 
-    private function runCommandViaDeployScript($command)
+    /**
+     * Run a command via the deployment script
+     */
+    private function runCommandViaDeployScript(string $command): mixed
     {
-        $this->output->writeln('Run command: ' . $command);
         $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
-        $this->forge->deploySite($this->serverId, $this->siteId());
+        $result = $this->forge->deploySite($this->serverId, $this->siteId());
+
+        return $result;
     }
 
+    /**
+     * Get the server ID
+     */
+    private function getServerId(): string
+    {
+        $serverId = $this->cfg->get('forge_server_id');
+        if ($serverId) {
+            return $serverId;
+        }
+        $serverId = text(label: 'We need a forge server ID for this command. Please provide a forge server ID', required: true);
+        $this->cfg->set('forge_server_id', $serverId);
 
+        return $serverId;
+    }
 
-    private function getForgeToken()
+    /**
+     * Get the Forge API token
+     */
+    private function getForgeToken(): string
     {
         $forgeToken = $this->cfg->get('forge_token');
         if ($forgeToken) {
@@ -272,80 +471,136 @@ class CreateStaging extends BaseCommand
         return $forgeToken;
     }
 
-    private function getSubdomain()
+    /**
+     * Get the Migrate DB license key
+     */
+    private function getMigrateDbLicenseKey(): string
+    {
+        $migrateDbLicenseKey = $this->cfg->get('wp_migrate_license_key');
+        if ($migrateDbLicenseKey) {
+            return $migrateDbLicenseKey;
+        }
+        $migrateDbLicenseKey = text(label: 'We need a Migrate DB license key for this command. Please provide a Migrate DB license key', required: true);
+        $this->cfg->set('wp_migrate_license_key', $migrateDbLicenseKey);
+
+        return $migrateDbLicenseKey;
+    }
+
+    /**
+     * Get the subdomain
+     */
+    private function getSubdomain(): string
     {
         $subdomain = $this->input->getArgument('subdomain');
         if ($subdomain) {
             return $subdomain;
         }
+
         return text(label: 'What is the subdomain we need to deploy to', required: true);
 
     }
 
-    private function fullDomain()
+    /**
+     * Get the full domain name
+     */
+    private function fullDomain(): string
     {
-        return $this->subdomain . ".lamalama.dev";
+        return $this->subdomain.'.'.self::DOMAIN_SUFFIX;
     }
 
-    private function dbName()
+    /**
+     * Get the database name
+     */
+    private function dbName(): string
     {
-        if($this->db_name) {
+        if ($this->db_name) {
             return $this->db_name;
         }
-        return $this->db_name = Str::slug('db_' . $this->fullDomain(), '_');
+
+        return $this->db_name = Str::slug(self::DB_PREFIX.$this->fullDomain(), '_');
     }
 
-    private function dbUsername()
+    /**
+     * Get the database username
+     */
+    private function dbUsername(): string
     {
-        if($this->db_user) {
+        if ($this->db_user) {
             return $this->db_user;
         }
-        return $this->db_user = Str::slug('db_user_' . $this->fullDomain(), '_');
+
+        return $this->db_user = Str::slug(self::DB_USER_PREFIX.$this->fullDomain(), '_');
     }
 
-    private function dbPassword()
+    /**
+     * Get the database password
+     */
+    private function dbPassword(): string
     {
         if ($this->db_password) {
             return $this->db_password;
         }
-        return $this->db_password = 'Edb1ZQvLR2mfLj';
-//        return $this->db_password = Str::random(14);
+
+        return $this->db_password = Str::random(16);
     }
 
-    private function siteIsolatedName()
+    /**
+     * Get the site's isolated username
+     */
+    private function siteIsolatedName(): string
     {
-        if($this->siteIsolatedName) {
+        if ($this->siteIsolatedName) {
             return $this->siteIsolatedName;
         }
 
-        return $this->siteIsolatedName = Str::slug('siteuser_' . $this->fullDomain(), '_');
+        return $this->siteIsolatedName = Str::slug(self::SITE_USER_PREFIX.$this->fullDomain(), '_');
     }
 
-    private function siteId()
+    /**
+     * Get the web directory path
+     */
+    private function webdir(): string
     {
-        if($this->site) {
-            return $this->site->id;
-        }
-
-        return '2365049';
+        return rtrim($this->site->directory, '/');
     }
 
-    private function serverIp()
+    /**
+     * Get the site ID
+     */
+    private function siteId(): int
+    {
+        return $this->site->id;
+    }
+
+    /**
+     * Get the server IP address
+     */
+    private function serverIp(): string
     {
         if ($this->ip) {
             return $this->ip;
         }
+
         return $this->ip = $this->forge->server($this->serverId)->ipAddress;
     }
 
+    /**
+     * Get the public SSH key
+     */
     private function getPublicKey(): ?string
     {
-        $ssh_key_path = getenv("HOME") . '/.ssh/id_rsa.pub';
+        $publicKeyFilename = $this->cfg->get('public_key_filename');
+        if (! $publicKeyFilename) {
+            $publicKeyFilename = text(label: 'We need a public SSH key filename for this command. Please provide a public key filename', required: true);
+            $this->cfg->set('public_key_filename', $publicKeyFilename);
+        }
+
+        $ssh_key_path = getenv('HOME').'/.ssh/'.$publicKeyFilename;
 
         // Check if the file exists
         if (file_exists($ssh_key_path)) {
             // Read the contents of the file
-            $ssh_key = file_get_contents($ssh_key_path);
+            $ssh_key = file_get_contents($ssh_key_path.'.pub');
 
             if ($ssh_key !== false) {
                 // Output the SSH key
@@ -356,121 +611,223 @@ class CreateStaging extends BaseCommand
             }
         } else {
             // File does not exist
-            echo "Error: SSH key file not found at " . $ssh_key_path;
+            if (confirm('SSH key not found. Would you like to create a new OpenSSH key pair?')) {
+                $command = "ssh-keygen -t rsa -b 4096 -C '".self::SSH_KEY_EMAIL."' -f ".$ssh_key_path." -N ''";
+                exec($command, $output, $return_value);
+
+                if ($return_value === 0) {
+                    return file_get_contents($ssh_key_path.'.pub');
+                }
+
+                echo "Error: Failed to create SSH key pair\n";
+            } else {
+                echo 'Error: SSH key file not found at '.$ssh_key_path."\n";
+            }
+
             return null;
         }
 
     }
 
-    private function wpUser()
+    /**
+     * Get the WordPress admin username
+     */
+    private function wpUser(): string
     {
-        if($this->wpUser) {
+        if ($this->wpUser) {
             return $this->wpUser;
         }
 
-        return $this->wpUser = 'Edwin';
+        return $this->wpUser = self::DEFAULT_WP_ADMIN_USER;
     }
 
-    private function wpPassword()
+    /**
+     * Get the WordPress admin password
+     */
+    private function wpPassword(): string
     {
-        if($this->wpPassword) {
+        if ($this->wpPassword) {
             return $this->wpPassword;
         }
 
         return $this->wpPassword = Str::random(9);
     }
 
-    private function wpUserEmail()
+    /**
+     * Get the WordPress admin email
+     */
+    private function wpUserEmail(): string
     {
-        if($this->wpUserEmail) {
+        if ($this->wpUserEmail) {
             return $this->wpUserEmail;
         }
 
-        return $this->wpUserEmail = 'edwin@lamalama.nl';
+        return $this->wpUserEmail = self::DEFAULT_WP_ADMIN_EMAIL;
     }
 
-    private function getPrivateKey(): ?string
-    {
-        $ssh_key_path = getenv("HOME") . '/.ssh/id_rsa';
-
-        // Check if the file exists
-        if (file_exists($ssh_key_path)) {
-            // Read the contents of the file
-            $ssh_key = file_get_contents($ssh_key_path);
-
-            if ($ssh_key !== false) {
-                // Output the SSH key
-                return $ssh_key;
-            } else {
-                // Error reading the file
-                return null;
-            }
-        } else {
-            // File does not exist
-            echo "Error: SSH key file not found at " . $ssh_key_path;
-            return null;
-        }
-
-    }
-
-    private function installSsh()
+    /**
+     * Install SSH key on the server
+     */
+    private function installSsh(): void
     {
         $key = $this->getPublicKey();
-        if(!$key) {
-            die('Could not get your public SSH key.');
+        if (! $key) {
+            exit('Could not get your public SSH key.');
         }
+
         $payload = [
-            "name" => "clli_added_key_" . Str::random('8'),
-            "key" => $key,
-            "username" => $this->siteIsolatedName()
+            'name' => self::SSH_KEY_NAME_PREFIX.Str::random('8'),
+            'key' => trim($key),
+            'username' => $this->siteIsolatedName(),
         ];
-        var_dump($payload);
+
         try {
             $this->forge->createSSHKey($this->serverId, $payload);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
     }
 
-    private function installEmptyRepo()
+    /**
+     * Install empty repository
+     */
+    private function installEmptyRepo(): void
     {
         $payload = [
-            "provider" => "github",
-            "repository" => "lamalamaNL/empty",
-            "branch" => "main",
-            "composer" => false
+            'provider' => 'github',
+            'repository' => self::GITHUB_ORG.'/'.self::EMPTY_REPO,
+            'branch' => 'main',
+            'composer' => false,
         ];
+
         try {
             $this->forge->installGitRepositoryOnSite($this->serverId, $this->siteId(), $payload);
         } catch (ValidationException $e) {
             $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn($er, $field) => "$field: " . Arr::first($er))->implode(' :: '));
-            die();
+            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            exit();
         }
 
     }
 
-    private function setDeployscriptAndDeploy()
+    /**
+     * Set deployment script and deploy
+     */
+    private function setBuildScriptAndDeploy()
     {
+        $themeFolderName = explode('/', $this->repo)[1];
+
         $commands = [
-            'cd /home/siteuser_devdaglamalamadev/devdag.lamalama.dev/public/wp-content/themes',
+            // Go to theme folder
+            'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
+
+            // Install dependencies
             'npm install',
+
+            // Build theme
             'npm run build',
         ];
 
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
     }
 
-    private function migrateLocalDatabase()
+    /**
+     * Set the final deployment script
+     */
+    private function setFinalDeploymentScript(): void
     {
-        $migrateKey = exec('wp migrate setting get connection-key');
+        $themeFolderName = explode('/', $this->repo)[1];
+
         $commands = [
-          "wp migratedb pull https://".$this->fullDomain()." $migrateKey --media=all --plugin-files=all"
+            // Go to theme folder
+            'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
+
+            // Reset hard to origin branch
+            'git reset --hard origin/$FORGE_SITE_BRANCH',
+
+            // Pull origin branch
+            'git pull origin $FORGE_SITE_BRANCH',
+
+            // Install dependencies
+            'npm install',
+
+            // Build theme
+            'npm run build',
+
+            // Restart FPM
+            'echo \'Restarting FPM...\'; sudo -S service $FORGE_PHP_FPM reload ) 9>/tmp/fpmlock',
         ];
-        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+
+        $command = implode("\n", $commands);
+
+        $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
     }
 
+    /**
+     * Get the Migrate DB connection key
+     */
+    private function getMigrateDbConnectionKey(): string
+    {
+        $command = ['command' => 'cd public && wp migratedb setting get connection-key'];
 
+        try {
+            $result = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
+
+            $siteCommand = $result;
+
+            // Wait for command to complete
+            while ($siteCommand->status === 'running' || $siteCommand->status === 'waiting') {
+                sleep(1);
+                $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $siteCommand->id);
+                $siteCommand = $result[0];
+            }
+
+            if ($siteCommand->status === 'finished') {
+                // Extract connection key from output
+                $output = trim($siteCommand->output);
+                if (! empty($output)) {
+                    return $output;
+                }
+            }
+
+            throw new \RuntimeException('Failed to get connection key: '.($siteCommand->output ?? 'No output'));
+        } catch (\Exception $e) {
+            throw new \RuntimeException('Error getting connection key: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Migrate the local database to staging
+     */
+    private function migrateLocalDatabase(): mixed
+    {
+        $localUrl = exec('wp option get siteurl');
+        $remoteUrl = 'https://'.$this->fullDomain();
+        $migrateKey = $this->getMigrateDbConnectionKey();
+
+        $commands = [
+            // Go to site root
+            'cd $FORGE_SITE_PATH',
+
+            // Push database
+            "wp migratedb push $remoteUrl ".
+            escapeshellarg($migrateKey).
+            ' --find='.escapeshellarg($localUrl).
+            ' --replace='.escapeshellarg($remoteUrl).
+            ' --media=all '.
+            ' --plugin-files=all',
+        ];
+
+        return $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+    }
+
+    /**
+     * Enable quick deploy
+     */
+    private function enableQuickDeploy(): mixed
+    {
+        return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
+    }
 }
