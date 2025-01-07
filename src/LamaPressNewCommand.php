@@ -316,6 +316,7 @@ class LamaPressNewCommand extends BaseCommand
             'cd '.$this->directory.'/wp-content/themes',
             'git clone '.self::THEME_BOILERPLATE_REPO.' '.$this->name,
             'cd '.$this->name,
+
             // Remove and create README.md
             'rm -rf README.md',
             'echo "# '.ucfirst($this->name).'

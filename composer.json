@@ -26,7 +26,8 @@
     "require-dev": {
         "laravel/pint": "^1.19",
         "phpstan/phpstan": "^1.10",
-        "phpunit/phpunit": "^9.3"
+        "phpunit/phpunit": "^9.3",
+        "rector/rector": "^1.2"
     },
     "bin": [
         "bin/clli"

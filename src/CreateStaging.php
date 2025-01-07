@@ -2,7 +2,6 @@
 
 namespace LamaLama\Clli\Console;
 
-use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use LamaLama\Clli\Console\Services\CliConfig;
 use Laravel\Forge\Exceptions\ValidationException;
@@ -14,6 +13,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
 use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\spin;
@@ -38,9 +38,9 @@ class CreateStaging extends BaseCommand
 
     private const DB_PREFIX = 'db_';
 
-    private const DB_USER_PREFIX = 'db_user_';
+    private const DB_USER_PREFIX = 'dbu_';
 
-    private const SITE_USER_PREFIX = 'siteuser_';
+    private const SITE_USER_PREFIX = 'u_';
 
     private const SSH_KEY_NAME_PREFIX = 'clli_added_key_';
 
@@ -274,8 +274,8 @@ class CreateStaging extends BaseCommand
         try {
             $this->site = $this->forge->createSite($this->serverId, $config);
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: $er")->implode("\n"));
+            error('Validation error');
+            error(print_r($e->errors(), true));
             exit();
         }
 
@@ -294,8 +294,8 @@ class CreateStaging extends BaseCommand
                 'password' => $this->dbPassword(),
             ]);
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            error('Validation error');
+            error(print_r($e->errors(), true));
             exit();
         }
     }
@@ -537,7 +537,7 @@ class CreateStaging extends BaseCommand
             return $this->db_name;
         }
 
-        return $this->db_name = Str::slug(self::DB_PREFIX.$this->fullDomain(), '_');
+        return $this->db_name = substr(Str::slug(self::DB_PREFIX.$this->fullDomain(), '_'), 0, 32);
     }
 
     /**
@@ -549,7 +549,7 @@ class CreateStaging extends BaseCommand
             return $this->db_user;
         }
 
-        return $this->db_user = Str::slug(self::DB_USER_PREFIX.$this->fullDomain(), '_');
+        return $this->db_user = substr(Str::slug(self::DB_USER_PREFIX.$this->fullDomain(), '_'), 0, 32);
     }
 
     /**
@@ -561,7 +561,7 @@ class CreateStaging extends BaseCommand
             return $this->db_password;
         }
 
-        return $this->db_password = Str::random(16);
+        return $this->db_password = Str::random(32);
     }
 
     /**
@@ -573,7 +573,7 @@ class CreateStaging extends BaseCommand
             return $this->siteIsolatedName;
         }
 
-        return $this->siteIsolatedName = Str::slug(self::SITE_USER_PREFIX.$this->fullDomain(), '_');
+        return $this->siteIsolatedName = substr(Str::slug(self::SITE_USER_PREFIX.$this->fullDomain(), '_'), 0, 32);
     }
 
     /**
@@ -601,7 +601,7 @@ class CreateStaging extends BaseCommand
             return $this->ip;
         }
 
-        return $this->ip = $this->forge->server($this->serverId)->ipAddress;
+        return $this->ip = $this->forge->server($this->serverId)?->ipAddress;
     }
 
     /**
@@ -610,6 +610,7 @@ class CreateStaging extends BaseCommand
     private function getPublicKey(): ?string
     {
         $publicKeyFilename = $this->cfg->get('public_key_filename');
+
         if (! $publicKeyFilename) {
             $publicKeyFilename = text(label: 'We need a public SSH key filename for this command. Please provide a public key filename', required: true);
             $this->cfg->set('public_key_filename', $publicKeyFilename);
@@ -704,8 +705,8 @@ class CreateStaging extends BaseCommand
         try {
             $this->forge->createSSHKey($this->serverId, $payload);
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            error('Validation error');
+            error(print_r($e->errors(), true));
             exit();
         }
     }
@@ -725,8 +726,8 @@ class CreateStaging extends BaseCommand
         try {
             $this->forge->installGitRepositoryOnSite($this->serverId, $this->siteId(), $payload);
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: ".Arr::first($er))->implode(' :: '));
+            error('Validation error');
+            error(print_r($e->errors(), true));
             exit();
         }
 
@@ -851,8 +852,8 @@ class CreateStaging extends BaseCommand
         try {
             return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
         } catch (ValidationException $e) {
-            $this->output->writeln('Validation error');
-            $this->output->writeln(collect($e->errors())->map(fn ($er, $field) => "$field: $er")->implode("\n"));
+            error('Validation error');
+            error(print_r($e->errors(), true));
             exit();
         }
     }
