@@ -338,7 +338,9 @@ Version: 1.0
             'rm -rf .gitignore',
             'echo "# Ignore
 /node_modules
-.package-lock.json
+/vendor
+/dist
+hot
 *.log
 .DS_Store
 " > .gitignore',
