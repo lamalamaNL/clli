@@ -34,6 +34,8 @@ class CreateStaging extends BaseCommand
 
     private const EMPTY_REPO = 'empty';
 
+    private const DEFAULT_BRANCH = 'main';
+
     private const SSH_KEY_EMAIL = 'clli@lamalama.nl';
 
     private const DB_PREFIX = 'db_';
@@ -132,8 +134,9 @@ class CreateStaging extends BaseCommand
             ['installTheme', 'Installing theme'],
             ['migrateLocaleToRemote', 'Migrating local to remote'],
             ['setBuildScriptAndDeploy', 'Building project'],
-            ['enableQuickDeploy', 'Enabling quick deploy'],
             ['setFinalDeploymentScript', 'Setting final deployment script'],
+            ['updateGitRemote', 'Updating git remote'],
+            ['enableQuickDeploy', 'Enabling quick deploy'],
         ];
 
         $totalSteps = count($steps);
@@ -329,18 +332,39 @@ class CreateStaging extends BaseCommand
             $adapter = new \Cloudflare\API\Adapter\Guzzle($key);
             $dns = new \Cloudflare\API\Endpoints\DNS($adapter);
 
-            // Create A record
-            $result = $dns->addRecord(
-                $cfZoneId,
-                'A',
-                $this->subdomain,
-                $this->serverIp(),
-                0, // Auto TTL
-                false // Proxied through Cloudflare
-            );
+            // Check if record exists first
+            $records = $dns->listRecords($cfZoneId, 'A', $this->subdomain.'.'.self::DOMAIN_SUFFIX);
+
+            if (! empty($records->result)) {
+                // Update existing record
+                $recordId = $records->result[0]->id;
+                $result = $dns->updateRecordDetails(
+                    $cfZoneId,
+                    $recordId,
+                    [
+                        'type' => 'A',
+                        'name' => $this->subdomain.'.'.self::DOMAIN_SUFFIX,
+                        'content' => $this->serverIp(),
+                        'ttl' => 0,
+                        'proxied' => false,
+                    ]
+                );
+
+                info('⚠️ Existing DNS record updated');
+            } else {
+                // Create new record
+                $result = $dns->addRecord(
+                    $cfZoneId,
+                    'A',
+                    $this->subdomain,
+                    $this->serverIp(),
+                    0, // Auto TTL
+                    false // Proxied through Cloudflare
+                );
+            }
 
             if (! $result) {
-                throw new \RuntimeException('Failed to create DNS record');
+                throw new \RuntimeException('Failed to create/update DNS record');
             }
         } catch (\Exception $e) {
             throw new \RuntimeException('Error updating DNS: '.$e->getMessage());
@@ -537,7 +561,10 @@ class CreateStaging extends BaseCommand
             return $this->db_name;
         }
 
-        return $this->db_name = substr(Str::slug(self::DB_PREFIX.$this->fullDomain(), '_'), 0, 32);
+        $dbName = substr(Str::slug(self::DB_PREFIX.$this->fullDomain(), '_'), 0, 16);
+        $dbName .= '_'.date('YmdHis');
+
+        return $this->db_name = $dbName;
     }
 
     /**
@@ -549,7 +576,10 @@ class CreateStaging extends BaseCommand
             return $this->db_user;
         }
 
-        return $this->db_user = substr(Str::slug(self::DB_USER_PREFIX.$this->fullDomain(), '_'), 0, 32);
+        $dbUser = substr(Str::slug(self::DB_USER_PREFIX.$this->fullDomain(), '_'), 0, 16);
+        $dbUser .= '_'.date('YmdHis');
+
+        return $this->db_user = $dbUser;
     }
 
     /**
@@ -719,7 +749,7 @@ class CreateStaging extends BaseCommand
         $payload = [
             'provider' => 'github',
             'repository' => self::GITHUB_ORG.'/'.self::EMPTY_REPO,
-            'branch' => 'main',
+            'branch' => self::DEFAULT_BRANCH,
             'composer' => false,
         ];
 
@@ -784,6 +814,28 @@ class CreateStaging extends BaseCommand
         $command = implode("\n", $commands);
 
         $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
+    }
+
+    /**
+     * Update the git remote
+     */
+    private function updateGitRemote(): void
+    {
+        $payload = [
+            'provider' => 'github',
+            'repository' => self::GITHUB_ORG.'/'.$this->repo,
+            'branch' => self::DEFAULT_BRANCH,
+        ];
+
+        info(print_r($payload, true));
+
+        try {
+            $this->forge->updateSiteGitRepository($this->serverId, $this->siteId(), $payload);
+        } catch (ValidationException $e) {
+            error('Validation error');
+            error(print_r($e->errors(), true));
+            exit();
+        }
     }
 
     /**

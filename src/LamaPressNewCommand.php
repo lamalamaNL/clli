@@ -368,9 +368,11 @@ hot
     {
         $commands = [
             'cd '.$this->directory.'/wp-content/themes/'.$this->name,
-            'git init',
+            'git init -b main',
             'git add .',
             'git commit -m "Initial LamaPress commit"',
+            'git push',
+            'git checkout -b develop',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
