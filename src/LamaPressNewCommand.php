@@ -375,14 +375,13 @@ hot
      */
     private function initializeGit(): void
     {
+        // Initialize main branch and push to it
         $commands = [
             'cd '.$this->directory.'/wp-content/themes/'.$this->name,
-            'git init -b main',
+            'git init',
             'git add .',
             'git commit -m "Initial commit"',
-            'git push',
-            'git checkout -b develop',
-            'git push',
+            'git branch -M main',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
@@ -427,9 +426,19 @@ hot
             return;
         }
 
+        // Create GitHub repository
         $commands = [
             'cd '.$this->directory.'/wp-content/themes/'.$this->name,
             'gh repo create '.self::GITHUB_ORG."/{$this->name} --source=. --push --private",
+        ];
+
+        $this->runCommands($commands, $this->input, $this->output);
+
+        // Create develop branch and push to it
+        $commands = [
+            'cd '.$this->directory.'/wp-content/themes/'.$this->name,
+            'git checkout -b develop',
+            'git push -u origin develop',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
@@ -440,9 +449,9 @@ hot
      */
     private function displayCredentials(): void
     {
-        $this->output->writeln('');
-        $this->output->writeln("<bg=blue;fg=white> INFO </> LamaPress ready on <options=bold>[http://{$this->name}.test]</>. Build something gezellebel.".PHP_EOL);
-        $this->output->writeln("Username: {$this->user}".PHP_EOL);
-        $this->output->writeln("Password: {$this->password}".PHP_EOL);
+        info('');
+        info("LamaPress ready on [http://{$this->name}.test]. Build something unexpected.");
+        info("Username: {$this->user}");
+        info("Password: {$this->password}");
     }
 }

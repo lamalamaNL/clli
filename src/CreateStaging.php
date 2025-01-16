@@ -121,8 +121,8 @@ class CreateStaging extends BaseCommand
 
         $steps = [
             ['checkClliConfig', 'Checking CLLI config'],
-            ['initializeCommand', 'Initializing command'],
             ['checkThemeFolder', 'Theme folder check'],
+            ['initializeCommand', 'Initializing command'],
             ['createSite', 'Creating site'],
             ['createDatabase', 'Creating database'],
             ['updateCloudflareDns', 'Updating Cloudflare DNS'],
@@ -253,7 +253,8 @@ class CreateStaging extends BaseCommand
     private function checkThemeFolder(): bool
     {
         if (! str_contains(getcwd(), 'wp-content/themes/')) {
-            throw new \RuntimeException('Theme folder not found, run this command from the theme folder');
+            error('⚠️  Theme folder not found, run this command from the theme folder');
+            exit(1);
         }
 
         return true;
