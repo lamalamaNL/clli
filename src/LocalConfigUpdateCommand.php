@@ -10,7 +10,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\text;
 
-class UpdateLocalConfigCommand extends BaseCommand
+class LocalConfigUpdateCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 

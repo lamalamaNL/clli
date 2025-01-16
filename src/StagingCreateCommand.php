@@ -20,7 +20,7 @@ use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\text;
 
-class CreateStaging extends BaseCommand
+class StagingCreateCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 

@@ -9,7 +9,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 use function Laravel\Prompts\select;
 
-class DeleteLocalConfigCommand extends BaseCommand
+class LocalConfigDeleteCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
