@@ -6,12 +6,24 @@ class CliConfig
 {
     private $configFilePath;
 
+    private $projectConfigFilePath;
+
+    private bool $forProject = false;
+
     /**
-     * Initialize the config file path and create if needed
+     * Initialize the config file paths and create if needed
      */
-    public function __construct()
+    public function __construct(bool $forProject = false, ?string $path = null)
     {
+        $this->forProject = $forProject;
+
+        if ($forProject && $path === null) {
+            throw new \InvalidArgumentException('Path must be provided when forProject is true');
+        }
+
         $this->configFilePath = $this->resolvePath('~/.clli/config.json');
+        $this->projectConfigFilePath = $path.'/.clli';
+
         $this->initializeFile();
     }
 
@@ -38,20 +50,36 @@ class CliConfig
      */
     private function initializeFile()
     {
-        $dir = dirname($this->configFilePath);
+        if ($this->forProject) {
+            if (! file_exists($this->projectConfigFilePath)) {
+                $initialData = [
+                    'created_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ];
+                file_put_contents($this->projectConfigFilePath, json_encode($initialData, JSON_PRETTY_PRINT));
+            }
+        } else {
+            $dir = dirname($this->configFilePath);
+            if (! is_dir($dir)) {
+                mkdir($dir, 0777, true);
+            }
 
-        if (! is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            if (! file_exists($this->configFilePath)) {
+                $initialData = [
+                    'created_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s'),
+                ];
+                file_put_contents($this->configFilePath, json_encode($initialData, JSON_PRETTY_PRINT));
+            }
         }
+    }
 
-        if (! file_exists($this->configFilePath)) {
-            $initialData = [
-                'created_at' => date('Y-m-d H:i:s'),
-                'updated_at' => date('Y-m-d H:i:s'),
-            ];
-
-            file_put_contents($this->configFilePath, json_encode($initialData, JSON_PRETTY_PRINT));
-        }
+    /**
+     * Get the active config file path
+     */
+    private function getActivePath()
+    {
+        return $this->forProject ? $this->projectConfigFilePath : $this->configFilePath;
     }
 
     /**
@@ -59,13 +87,15 @@ class CliConfig
      */
     public function read()
     {
-        if (! file_exists($this->configFilePath)) {
+        $path = $this->getActivePath();
+
+        if (! file_exists($path)) {
             return [];
         }
 
-        $jsonContent = file_get_contents($this->configFilePath);
+        $jsonContent = file_get_contents($path);
 
-        return json_decode($jsonContent, true);
+        return json_decode($jsonContent, true) ?? [];
     }
 
     /**
@@ -75,8 +105,7 @@ class CliConfig
     {
         $data['updated_at'] = date('Y-m-d H:i:s');
         $jsonContent = json_encode($data, JSON_PRETTY_PRINT);
-
-        file_put_contents($this->configFilePath, $jsonContent);
+        file_put_contents($this->getActivePath(), $jsonContent);
     }
 
     /**
@@ -105,7 +134,6 @@ class CliConfig
     public function delete($key)
     {
         $data = $this->read();
-
         if (isset($data[$key])) {
             unset($data[$key]);
             $this->write($data);

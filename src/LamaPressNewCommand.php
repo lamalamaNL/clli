@@ -132,6 +132,7 @@ class LamaPressNewCommand extends BaseCommand
             ['addUsers', 'Adding users'],
             ['installPlugins', 'Installing plugins'],
             ['setupTheme', 'Setting up theme'],
+            ['createProjectConfig', 'Creating project config'],
             ['initializeGit', 'Initializing Git repository'],
             ['buildAssets', 'Building assets'],
             ['pushToGitHub', 'Pushing to GitHub'],
@@ -223,10 +224,6 @@ class LamaPressNewCommand extends BaseCommand
             'wp option update time_format "H:i"',
             'wp option update start_of_week 1',
             'wp rewrite structure "/%postname%/" --hard',
-
-            'wp theme delete twentytwentythree',
-            'wp theme delete twentytwentyfour',
-            'wp theme delete twentytwentyfive',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
@@ -317,10 +314,15 @@ class LamaPressNewCommand extends BaseCommand
             'git clone '.self::THEME_BOILERPLATE_REPO.' '.$this->name,
             'cd '.$this->name,
 
+            // Remove TODO.md
+            'rm -rf TODO.md',
+
             // Remove and create README.md
             'rm -rf README.md',
-            'echo "# '.ucfirst($this->name).'
-## A Lamapress website
+            'echo "![Cover](https://storage.lamalama.nl/lamalama/playheart-cover.jpeg)
+
+# '.ucfirst($this->name).'
+## A LamaPress website
 " > README.md',
 
             // Remove and create style.css
@@ -345,17 +347,24 @@ hot
 .DS_Store
 " > .gitignore',
 
+            // Remove .git
             'rm -rf .git',
+
+            // Install dependencies
             'composer install',
             'npm install',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
 
-        // Activate the theme
+        // Activate the theme and delete old themes
         $commands = [
             'cd '.$this->directory,
             'wp theme activate '.$this->name,
+
+            'wp theme delete twentytwentythree',
+            'wp theme delete twentytwentyfour',
+            'wp theme delete twentytwentyfive',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
@@ -370,9 +379,10 @@ hot
             'cd '.$this->directory.'/wp-content/themes/'.$this->name,
             'git init -b main',
             'git add .',
-            'git commit -m "Initial LamaPress commit"',
+            'git commit -m "Initial commit"',
             'git push',
             'git checkout -b develop',
+            'git push',
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
@@ -389,6 +399,16 @@ hot
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
+    }
+
+    /**
+     * Create a project config file.
+     */
+    private function createProjectConfig(): void
+    {
+        $config = new CliConfig(forProject: true, path: $this->directory.'/wp-content/themes/'.$this->name);
+        $config->set('created_at', date('Y-m-d H:i:s'));
+        $config->set('updated_at', date('Y-m-d H:i:s'));
     }
 
     /**
