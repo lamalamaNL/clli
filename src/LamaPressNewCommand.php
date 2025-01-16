@@ -340,7 +340,6 @@ Version: 1.0
             'rm -rf .gitignore',
             'echo "# Ignore
 /node_modules
-/vendor
 /dist
 hot
 *.log

@@ -34,7 +34,7 @@ class CreateStaging extends BaseCommand
 
     private const EMPTY_REPO = 'empty';
 
-    private const DEFAULT_BRANCH = 'main';
+    private const DEFAULT_BRANCH = 'develop';
 
     private const SSH_KEY_EMAIL = 'clli@lamalama.nl';
 
@@ -154,8 +154,6 @@ class CreateStaging extends BaseCommand
         }
 
         info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
-
-        // TODO: Een table+ connection string uitspugen voor makelijk connecten van local naar remote db
 
         $output = [
             ['site domain: ', $this->fullDomain()],
@@ -453,7 +451,7 @@ class CreateStaging extends BaseCommand
             'cd $FORGE_SITE_PATH/public/wp-content/themes',
 
             // Clone project theme
-            'git clone --depth=1 git@github.com:lamalamaNL/'.$themeFolderName.'.git '.$themeFolderName,
+            'git clone --depth=1 -b '.self::DEFAULT_BRANCH.' git@github.com:'.self::GITHUB_ORG.'/'.$themeFolderName.'.git '.$themeFolderName,
             'wp theme activate '.$themeFolderName,
 
             // Delete default themes
@@ -796,11 +794,15 @@ class CreateStaging extends BaseCommand
             // Go to theme folder
             'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
 
+            '',
+
             // Reset hard to origin branch
             'git reset --hard origin/$FORGE_SITE_BRANCH',
 
             // Pull origin branch
             'git pull origin $FORGE_SITE_BRANCH',
+
+            '',
 
             // Install dependencies
             'npm install',
@@ -808,7 +810,10 @@ class CreateStaging extends BaseCommand
             // Build theme
             'npm run build',
 
+            '',
+
             // Restart FPM
+            '( flock -w 10 9 || exit 1',
             'echo \'Restarting FPM...\'; sudo -S service $FORGE_PHP_FPM reload ) 9>/tmp/fpmlock',
         ];
 
@@ -824,11 +829,9 @@ class CreateStaging extends BaseCommand
     {
         $payload = [
             'provider' => 'github',
-            'repository' => self::GITHUB_ORG.'/'.$this->repo,
+            'repository' => $this->repo,
             'branch' => self::DEFAULT_BRANCH,
         ];
-
-        info(print_r($payload, true));
 
         try {
             $this->forge->updateSiteGitRepository($this->serverId, $this->siteId(), $payload);
@@ -866,9 +869,11 @@ class CreateStaging extends BaseCommand
                 }
             }
 
-            throw new \RuntimeException('Failed to get connection key: '.($siteCommand->output ?? 'No output'));
+            error('Failed to get connection key: '.($siteCommand->output ?? 'No output'));
+            exit(1);
         } catch (\Exception $e) {
-            throw new \RuntimeException('Error getting connection key: '.$e->getMessage());
+            error('Error getting connection key: '.$e->getMessage());
+            exit(1);
         }
     }
 
@@ -888,10 +893,13 @@ class CreateStaging extends BaseCommand
             ' --media=all '.
             ' --plugin-files=all';
 
+        info(print_r($command, true));
+
         exec($command, $output, $exitCode);
 
         if ($exitCode !== 0) {
-            throw new \RuntimeException('Migration failed');
+            error('Migration failed');
+            exit(1);
         }
 
         return implode("\n", $output);
