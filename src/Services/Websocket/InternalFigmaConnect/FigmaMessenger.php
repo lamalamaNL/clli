@@ -17,7 +17,7 @@ class FigmaMessenger
     public function __construct(OutputInterface $output)
     {
         $this->output = $output;
-        $this->initSocket();
+        // $this->initSocket();
         $this->initWebserver();
         global $argv;
         $argv[1] = 'start';
