@@ -24,9 +24,9 @@ clli staging:pull
 #### Options
 If the repo name is different then the subdomain for the test environment, you can overwrite the repository url with the following option.
 ```
-clli staging:pull -r "git@github.com:lamalamaNL/justdiggit2021.git"
+clli staging:pull -r "git@github.com:lamalamaNL/lamalama.git"
 // or
-clli staging:pull --repository_url="https://github.com/lamalamaNL/justdiggit2021.git"
+clli staging:pull --repository_url="https://github.com/lamalamaNL/lamalama.git"
 ```
 
 #### Tips
@@ -57,7 +57,7 @@ Adjust your local composer.json
     "repositories": [
         {
             "type": "path",
-            "url": "/Users/markdevries/Code/clli",
+            "url": "/Users/lamalama/Code/clli",
             "options": {
                 "symlink": true
             }
