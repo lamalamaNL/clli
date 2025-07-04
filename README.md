@@ -9,8 +9,8 @@ CLLI development tooling for Lama Lama
 ## Pull staging
 Pull a staging environment to your local machine.
 Steps:
-- Login to the wordpress staging environment
-- Make sure WP migrate is on the lastest version. Update if one is available.
+- Login to the WordPress staging environment
+- Make sure WP Migrate is on the lastest version. Update if one is available.
 - Copy the connection info under: Tools | WP Migrate | Settings (tab).
 - On your local machine open a terminal cd in your code directory.
 - Run the following command
