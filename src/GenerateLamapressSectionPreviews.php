@@ -22,6 +22,7 @@ class GenerateLamapressSectionPreviews extends BaseCommand
     private $sitemapUrls = [];
     private $sections = [];
     private $sectionsFolder = '';
+    private $sectionsToGenerate = [];
 
     /**
      * Configure the command options.
@@ -158,24 +159,30 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         }
 
         // // List all directories in /components/sections
-        // $dirs = [];
-        // foreach (scandir($sectionsDir) as $item) {
-        //     if ($item === '.' || $item === '..') {
-        //         continue;
-        //     }
-        //     $fullPath = $sectionsDir . DIRECTORY_SEPARATOR . $item;
-        //     if (is_dir($fullPath)) {
-        //         $dirs[] = $item;
-        //     }
-        // }
+        $dirs = [];
+        foreach (scandir($sectionsDir) as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $fullPath = $sectionsDir . DIRECTORY_SEPARATOR . $item;
+            if (is_dir($fullPath)) {
+                $dirs[] = $item;
+            }
+        }
 
+        $this->sectionsToGenerate = $dirs;
         $this->sectionsFolder = $sectionsDir;
     }
 
     private function makeScreenshots()
     {
         foreach ($this->sections as $name => $urls) {
-            $this->saveSectionScreenshot($urls[0] . '?section-render=true', '[data-section-render="'.$name.'"]', $this->sectionsFolder . DIRECTORY_SEPARATOR . $name . '/preview.jpg');
+            if (!in_array($name, $this->sectionsToGenerate)) {
+                echo 'Skipping ' . $name . ' because it is not in the sections to generate';
+                continue;
+            } else {
+                $this->saveSectionScreenshot($urls[0] . '?section-render=true', '[data-section-render="'.$name.'"]', $this->sectionsFolder . DIRECTORY_SEPARATOR . $name . '/preview.jpg');
+            }
         }
     }
 
