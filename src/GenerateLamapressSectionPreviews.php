@@ -179,7 +179,7 @@ class GenerateLamapressSectionPreviews extends BaseCommand
     {
         foreach ($this->sections as $name => $urls) {
             if (!in_array($name, $this->sectionsToGenerate)) {
-                echo 'Skipping ' . $name . ' because it is not in the sections to generate';
+                echo $name . ' does not exist in the sections folder' . PHP_EOL;
                 continue;
             } else {
                 $this->saveSectionScreenshot($urls[0] . '?section-render=true', '[data-section-render="'.$name.'"]', $this->sectionsFolder . DIRECTORY_SEPARATOR . $name . '/preview-no-header.jpg');
