@@ -21,6 +21,7 @@ class GenerateLamapressSectionPreviews extends BaseCommand
 
     private $sitemapUrls = [];
     private $sections = [];
+    private $sectionsFolder = '';
 
     /**
      * Configure the command options.
@@ -41,6 +42,8 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         $this->output = $output;
         $this->getSitemapUrls($this->getDomain() . '/sitemap.xml');
         $this->getRenderedSections();
+        $this->getSectionsFolder();
+        $this->makeScreenshots();
         // $this->getSections();
 
         // echo $this->getDomain();
@@ -127,11 +130,59 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         info('🤖 puppeteer is installed');
     }
 
-    private function getDomain()
+    private function getSectionsFolder()
     {
         $currentDir = getcwd();
         $pathParts = explode(DIRECTORY_SEPARATOR, $currentDir);
 
+        // Find the index of 'wp-content' in the path
+        $wpContentIndex = array_search('wp-content', $pathParts);
+        if ($wpContentIndex === false) {
+            throw new \Exception('This command must be run from inside a wp-content folder');
+        }
+
+        // Go two folders deeper from wp-content
+        if (!isset($pathParts[$wpContentIndex + 2])) {
+            throw new \Exception('Cannot find lamapress theme folder');
+        }
+
+        // Build the path to the target directory
+        $targetPathParts = array_slice($pathParts, 0, $wpContentIndex + 3);
+        $targetDir = implode(DIRECTORY_SEPARATOR, $targetPathParts);
+
+        // Append /components/sections to the path
+        $sectionsDir = $targetDir . DIRECTORY_SEPARATOR . 'components' . DIRECTORY_SEPARATOR . 'sections';
+
+        if (!is_dir($sectionsDir)) {
+            throw new \Exception("Sections directory not found: {$sectionsDir}");
+        }
+
+        // // List all directories in /components/sections
+        // $dirs = [];
+        // foreach (scandir($sectionsDir) as $item) {
+        //     if ($item === '.' || $item === '..') {
+        //         continue;
+        //     }
+        //     $fullPath = $sectionsDir . DIRECTORY_SEPARATOR . $item;
+        //     if (is_dir($fullPath)) {
+        //         $dirs[] = $item;
+        //     }
+        // }
+
+        $this->sectionsFolder = $sectionsDir;
+    }
+
+    private function makeScreenshots()
+    {
+        foreach ($this->sections as $name => $urls) {
+            $this->saveSectionScreenshot($urls[0] . '?section-render=true', '[data-section-render="'.$name.'"]', $this->sectionsFolder . DIRECTORY_SEPARATOR . $name . '/preview.jpg');
+        }
+    }
+
+    private function getDomain()
+    {
+        $currentDir = getcwd();
+        $pathParts = explode(DIRECTORY_SEPARATOR, $currentDir);
         // Find wp-content in the path
         $wpContentIndex = array_search('wp-content', $pathParts);
         if ($wpContentIndex === false) {
@@ -192,6 +243,6 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         }
         
         $this->sections = $sectionMap;
-        print_r($this->sections);
+        // print_r($this->sections);
     }
 }
