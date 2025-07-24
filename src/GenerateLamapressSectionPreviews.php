@@ -36,6 +36,8 @@ class GenerateLamapressSectionPreviews extends BaseCommand
     {
         $this->input = $input;
         $this->output = $output;
+        $domain =$this->getDomain();
+        // echo $domain;
         if (! $this->testByEd()) {
             return Command::FAILURE;
         }
@@ -117,5 +119,25 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         $cmd = 'cd '.escapeshellarg($cliRoot).' && npm install puppeteer';
         exec($cmd, $output, $exitCode);
         info('🤖 puppeteer is installed');
+    }
+
+    private function getDomain()
+    {
+        $currentDir = getcwd();
+        $pathParts = explode(DIRECTORY_SEPARATOR, $currentDir);
+
+        // Find wp-content in the path
+        $wpContentIndex = array_search('wp-content', $pathParts);
+        if ($wpContentIndex === false) {
+            throw new \Exception('This command must be run from inside a wp-content folder');
+        }
+        
+        // Get the parent folder name (the folder containing wp-content)
+        if ($wpContentIndex > 0) {
+            $parentFolderName = $pathParts[$wpContentIndex - 1];
+            return $parentFolderName . '.test';
+        }
+        
+        throw new \Exception('Could not determine parent folder name');
     }
 }
