@@ -20,6 +20,7 @@ class GenerateLamapressSectionPreviews extends BaseCommand
     protected OutputInterface $output;
 
     private $sitemapUrls = [];
+    private $sections = [];
 
     /**
      * Configure the command options.
@@ -39,7 +40,9 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         $this->input = $input;
         $this->output = $output;
         $this->getSitemapUrls($this->getDomain() . '/sitemap.xml');
-        print_r($this->sitemapUrls);
+        $this->getRenderedSections();
+        // $this->getSections();
+
         // echo $this->getDomain();
         // if (! $this->testByEd()) {
         //     return Command::FAILURE;
@@ -165,5 +168,30 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         }
         
         return $locations;
+    }
+
+    private function getRenderedSections()
+    {
+        $client = new \GuzzleHttp\Client();
+        $sectionMap = [];
+        
+        foreach ($this->sitemapUrls as $url) {
+            $response = $client->request('GET', $url . '?section-render=true');
+            $html = $response->getBody()->getContents();
+        
+            if (preg_match_all('/data-section-render=[\'"]([^\'"]+)[\'"]/', $html, $matches)) {
+                foreach ($matches[1] as $name) {
+                    if (!isset($sectionMap[$name])) {
+                        $sectionMap[$name] = [];
+                    }
+                    if (!in_array($url, $sectionMap[$name])) {
+                        $sectionMap[$name][] = $url;
+                    }
+                }
+            }
+        }
+        
+        $this->sections = $sectionMap;
+        print_r($this->sections);
     }
 }
