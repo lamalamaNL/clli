@@ -63,6 +63,16 @@ class GenerateLamapressSectionPreviews extends BaseCommand
 
     protected function saveSectionScreenshot(string $url, string $selector, string $savePath): ?string
     {
+        /*
+            TODO:
+            - Check if puppeteer is installed. If not install it
+            - Wait for transition / animation
+            - Hide menu / footer / other stuff
+            - Add param to hide extra elements?
+            - Add param for url
+            - Margins?
+            - Image type and background?
+        */
         spin(
             message: "Creating screenshot for {$selector}",
             callback: fn () => Browsershot::url($url)
