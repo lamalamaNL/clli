@@ -15,6 +15,8 @@ class GenerateLamapressSectionPreviews extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
+    protected InputInterface $input;
+
     protected OutputInterface $output;
 
     /**
@@ -32,14 +34,22 @@ class GenerateLamapressSectionPreviews extends BaseCommand
      */
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->input = $input;
         $this->output = $output;
-        $this->testByEd();
+        if (! $this->testByEd()) {
+            return Command::FAILURE;
+        }
 
         return Command::SUCCESS;
     }
 
-    protected function testByEd(): void
+    protected function testByEd(): bool
     {
+        if (! $this->isPuppeteerInstalled()) {
+            info('❌ puppeteer is missing. @Ed write a command that autmaticy installs it');
+
+            return false;
+        }
         $sections = [
             [
                 'url' => 'https://lamalama.nl/',
@@ -59,6 +69,7 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         info('Done ✅');
         table(['url', 'component', 'file'], $sections);
 
+        return true;
     }
 
     protected function saveSectionScreenshot(string $url, string $selector, string $savePath): ?string
@@ -66,20 +77,37 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         /*
             TODO:
             - Check if puppeteer is installed. If not install it
-            - Wait for transition / animation
+            - Wait for transition / animation (waitUntilNetworkIdle + setDelay)
             - Hide menu / footer / other stuff
             - Add param to hide extra elements?
             - Add param for url
-            - Margins?
+            - Margins? Maybe: https://spatie.be/docs/image/v3/image-manipulations/image-canvas
             - Image type and background?
         */
         spin(
             message: "Creating screenshot for {$selector}",
             callback: fn () => Browsershot::url($url)
                 ->windowSize(1280, 960)
+                ->waitUntilNetworkIdle()
+                ->setDelay(5000)
                 ->select($selector)
                 ->save($savePath));
 
         return $savePath;
+    }
+
+    protected function isPuppeteerInstalled(): bool
+    {
+        // Determine the global install directory (where this script is running)
+        $cliRoot = realpath(__DIR__.'/../');
+        $cmd = 'cd '.escapeshellarg($cliRoot).' && npm ls puppeteer --json 2>/dev/null';
+        exec($cmd, $output, $exitCode);
+        if ($exitCode !== 0) {
+            return false;
+        }
+        $json = implode("\n", $output);
+        $data = json_decode($json, true);
+
+        return isset($data['dependencies']['puppeteer']);
     }
 }
