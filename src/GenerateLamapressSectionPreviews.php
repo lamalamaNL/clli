@@ -46,9 +46,8 @@ class GenerateLamapressSectionPreviews extends BaseCommand
     protected function testByEd(): bool
     {
         if (! $this->isPuppeteerInstalled()) {
-            info('❌ puppeteer is missing. @Ed write a command that autmaticy installs it');
-
-            return false;
+            info('❌ puppeteer is missing.');
+            $this->installPuppeteer();
         }
         $sections = [
             [
@@ -109,5 +108,14 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         $data = json_decode($json, true);
 
         return isset($data['dependencies']['puppeteer']);
+    }
+
+    public function installPuppeteer(): void
+    {
+        info('🤖 installing puppeteer');
+        $cliRoot = realpath(__DIR__.'/../');
+        $cmd = 'cd '.escapeshellarg($cliRoot).' && npm install puppeteer';
+        exec($cmd, $output, $exitCode);
+        info('🤖 puppeteer is installed');
     }
 }
