@@ -95,14 +95,15 @@ class GenerateLamapressSectionPreviews extends BaseCommand
             - Margins? Maybe: https://spatie.be/docs/image/v3/image-manipulations/image-canvas
             - Image type and background?
         */
-        spin(
-            message: "Creating screenshot for {$selector}",
-            callback: fn () => Browsershot::url($url)
-                ->windowSize(1280, 960)
+        echo "Creating screenshot for {$selector} on {$url}" . PHP_EOL;
+            Browsershot::url($url)
+                ->windowSize(1440, 960)
                 ->waitUntilNetworkIdle()
-                ->setDelay(5000)
+                ->setDelay(10000)
+                ->hideBackground() // Hide background for cleaner screenshots
                 ->select($selector)
-                ->save($savePath));
+                ->save($savePath);
+        sleep(1);
 
         return $savePath;
     }
@@ -181,7 +182,7 @@ class GenerateLamapressSectionPreviews extends BaseCommand
                 echo 'Skipping ' . $name . ' because it is not in the sections to generate';
                 continue;
             } else {
-                $this->saveSectionScreenshot($urls[0] . '?section-render=true', '[data-section-render="'.$name.'"]', $this->sectionsFolder . DIRECTORY_SEPARATOR . $name . '/preview.jpg');
+                $this->saveSectionScreenshot($urls[0] . '?section-render=true', '[data-section-render="'.$name.'"]', $this->sectionsFolder . DIRECTORY_SEPARATOR . $name . '/preview-no-header.jpg');
             }
         }
     }
