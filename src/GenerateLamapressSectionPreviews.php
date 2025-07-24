@@ -19,6 +19,8 @@ class GenerateLamapressSectionPreviews extends BaseCommand
 
     protected OutputInterface $output;
 
+    private $sitemapUrls = [];
+
     /**
      * Configure the command options.
      */
@@ -36,11 +38,12 @@ class GenerateLamapressSectionPreviews extends BaseCommand
     {
         $this->input = $input;
         $this->output = $output;
-        $domain =$this->getDomain();
-        // echo $domain;
-        if (! $this->testByEd()) {
-            return Command::FAILURE;
-        }
+        $this->getSitemapUrls($this->getDomain() . '/sitemap.xml');
+        print_r($this->sitemapUrls);
+        // echo $this->getDomain();
+        // if (! $this->testByEd()) {
+        //     return Command::FAILURE;
+        // }
 
         return Command::SUCCESS;
     }
@@ -135,9 +138,32 @@ class GenerateLamapressSectionPreviews extends BaseCommand
         // Get the parent folder name (the folder containing wp-content)
         if ($wpContentIndex > 0) {
             $parentFolderName = $pathParts[$wpContentIndex - 1];
-            return $parentFolderName . '.test';
+            return 'http://' . $parentFolderName . '.test';
         }
         
         throw new \Exception('Could not determine parent folder name');
+    }
+
+    private function getSitemapUrls($url)
+    {
+        $client = new \GuzzleHttp\Client();
+        $response = $client->request('GET', $url);
+        $sitemap = $response->getBody()->getContents();
+        
+        if (!preg_match_all('/<loc>(.*?)<\/loc>/is', $sitemap, $matches)) {
+            throw new \Exception('Failed to parse sitemap XML');
+        }
+
+        $locations = $matches[1];
+
+        foreach ($locations as $location) {
+            if (strpos($location, 'sitemap.xml') !== false && $location !== $url) {
+                $this->getSitemapUrls($location);
+            } else {
+                $this->sitemapUrls[] = $location;
+            }
+        }
+        
+        return $locations;
     }
 }
