@@ -52,6 +52,7 @@ class LamaPressNewCommand extends BaseCommand
         'user-switching',
         'wp-mail-smtp',
         'tiny-compress-images',
+        'duplicate-post'
     ];
 
     private const INACTIVE_PLUGINS = [
