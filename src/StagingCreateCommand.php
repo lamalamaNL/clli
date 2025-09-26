@@ -116,9 +116,6 @@ class StagingCreateCommand extends BaseCommand
     {
         $this->cfg = new CliConfig;
 
-        $startTime = microtime(true);
-        $initialStartTime = microtime(true);
-
         $steps = [
             ['checkClliConfig', 'Checking CLLI config'],
             ['checkThemeFolder', 'Theme folder check'],
@@ -140,6 +137,7 @@ class StagingCreateCommand extends BaseCommand
         ];
 
         $totalSteps = count($steps);
+        $initialStartTime = microtime(true);
 
         foreach ($steps as $index => [$method, $message]) {
             $startTime = microtime(true);
@@ -155,16 +153,8 @@ class StagingCreateCommand extends BaseCommand
 
         info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
 
-        $output = [
-            ['site domain: ', $this->fullDomain()],
-            ['server username: ', $this->siteIsolatedName()],
-            ['Site id: ', $this->siteId()],
-            ['DB name', $this->dbName()],
-            ['DB username', $this->dbUsername()],
-            ['DB password', $this->dbPassword()],
-        ];
-
-        table(['Key', 'Value'], $output);
+        $this->displayCredentials();
+        $this->displayServerInfo();
 
         return Command::SUCCESS;
     }
@@ -199,7 +189,7 @@ class StagingCreateCommand extends BaseCommand
             }
         }
 
-        return $this->repo = 'lamalamaNL/'.trim(basename(getcwd()));
+        return $this->repo = self::GITHUB_ORG.'/'.trim(basename(getcwd()));
     }
 
     /**
@@ -433,9 +423,24 @@ class StagingCreateCommand extends BaseCommand
             'wp migratedb setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
             'wp migratedb setting update push on',
 
-            // Update all plugins
+            // Update WP Migrate
             'wp plugin update --all',
+
+            // Empty caches
+            'wp cache flush',
+            'wp rewrite flush',
+
+            // Reactivate WP Migrate
+            'wp plugin deactivate wp-migrate-db-pro',
+            'wp plugin activate wp-migrate-db-pro',
+            'wp_migrate_license_key='.$this->getMigrateDbLicenseKey(),
+            'wp migratedb setting update license $wp_migrate_license_key --user='.$this->wpUserEmail(),
+            'wp migratedb setting update push on',
+
+            '( flock -w 10 9 || exit 1',
+            '    echo "Restarting FPM..."; sudo -S service $FORGE_PHP_FPM reload ) 9>/tmp/fpmlock',
         ];
+
         $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
     }
 
@@ -466,9 +471,9 @@ class StagingCreateCommand extends BaseCommand
     /**
      * Run a command via the Forge API
      */
-    private function runCommandViaApi(array $command): mixed
+    private function runCommandViaApi(string $command): mixed
     {
-        $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
+        $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), ['command' => $command]);
 
         return $siteCommand;
     }
@@ -774,7 +779,7 @@ class StagingCreateCommand extends BaseCommand
             'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
 
             // Install dependencies
-            'npm install',
+            'npm ci',
 
             // Build theme
             'npm run build',
@@ -805,7 +810,7 @@ class StagingCreateCommand extends BaseCommand
             '',
 
             // Install dependencies
-            'npm install',
+            'npm ci',
 
             // Build theme
             'npm run build',
@@ -847,6 +852,29 @@ class StagingCreateCommand extends BaseCommand
      */
     private function getMigrateDbConnectionKey(): string
     {
+        // First, check if WP Migrate DB plugin is installed and activated
+        $checkCommand = ['command' => 'cd public && wp plugin is-active wp-migrate-db'];
+
+        try {
+            $checkResult = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $checkCommand);
+            $checkSiteCommand = $checkResult;
+
+            // Wait for command to complete
+            while ($checkSiteCommand->status === 'running' || $checkSiteCommand->status === 'waiting') {
+                sleep(1);
+                $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $checkSiteCommand->id);
+                $checkSiteCommand = $result[0];
+            }
+
+            if ($checkSiteCommand->status === 'finished' && trim($checkSiteCommand->output) !== 'Active') {
+                error('WP Migrate DB plugin is not active on remote site. Please install and activate it first.');
+                exit(1);
+            }
+        } catch (\Exception $e) {
+            error('Error checking WP Migrate DB plugin status: '.$e->getMessage());
+            exit(1);
+        }
+
         $command = ['command' => 'cd public && wp migratedb setting get connection-key'];
 
         try {
@@ -864,13 +892,33 @@ class StagingCreateCommand extends BaseCommand
             if ($siteCommand->status === 'finished') {
                 // Extract connection key from output
                 $output = trim($siteCommand->output);
-                if (! empty($output)) {
-                    return $output;
-                }
-            }
 
-            error('Failed to get connection key: '.($siteCommand->output ?? 'No output'));
-            exit(1);
+                // Check for common error messages
+                if (empty($output) || $output === 'Command output not found.' || $output === 'No output') {
+                    error('Failed to retrieve connection key from remote site.');
+                    error('This usually means:');
+                    error('1. WP Migrate DB plugin is not properly configured on remote site');
+                    error('2. Plugin is not activated or has errors');
+                    error('3. Database connection issues on remote site');
+                    error('');
+                    error('Please check the remote site and ensure WP Migrate DB is working properly.');
+                    exit(1);
+                }
+
+                // Validate connection key format
+                if (strlen($output) >= 30 && strlen($output) <= 50 && preg_match('/^[A-Za-z0-9+\/]+$/', $output)) {
+                    return $output;
+                } else {
+                    error('Invalid connection key format received: '.$output);
+                    error('Expected: 30-50 characters containing only A-Z, a-z, 0-9, +, and /');
+                    error('Raw output: '.json_encode($output));
+                    exit(1);
+                }
+            } else {
+                error('Command failed with status: '.$siteCommand->status);
+                error('Output: '.($siteCommand->output ?? 'No output'));
+                exit(1);
+            }
         } catch (\Exception $e) {
             error('Error getting connection key: '.$e->getMessage());
             exit(1);
@@ -886,6 +934,20 @@ class StagingCreateCommand extends BaseCommand
         $remoteUrl = 'https://'.$this->fullDomain();
         $migrateKey = $this->getMigrateDbConnectionKey();
 
+        // Validate that we have a proper local URL
+        if (empty($localUrl) || ! filter_var($localUrl, FILTER_VALIDATE_URL)) {
+            error('Invalid local URL detected: '.$localUrl);
+            exit(1);
+        }
+
+        // Validate remote URL format
+        if (! filter_var($remoteUrl, FILTER_VALIDATE_URL)) {
+            error('Invalid remote URL format: '.$remoteUrl);
+            exit(1);
+        }
+
+        info("Starting migration from {$localUrl} to {$remoteUrl}");
+
         $command = "wp migratedb push $remoteUrl ".
             escapeshellarg($migrateKey).
             ' --find='.escapeshellarg($localUrl).
@@ -893,14 +955,37 @@ class StagingCreateCommand extends BaseCommand
             ' --media=all '.
             ' --plugin-files=all';
 
-        info(print_r($command, true));
+        info('Executing command: '.$command);
 
         exec($command, $output, $exitCode);
 
         if ($exitCode !== 0) {
-            error('Migration failed');
+            error('Migration failed with exit code: '.$exitCode);
+            error('Command output: '.implode("\n", $output));
+
+            // Provide specific error guidance based on common issues
+            $outputString = implode("\n", $output);
+            if (strpos($outputString, 'Version Mismatch') !== false) {
+                error('Version mismatch detected between local and remote WP Migrate DB plugins.');
+                error('Please update one of the plugins to match the other version.');
+                error('Local update: wp plugin update wp-migrate-db');
+                error('Remote update: Run wp plugin update wp-migrate-db on the remote site');
+            } elseif (strpos($outputString, 'Invalid content verification signature') !== false) {
+                error('Connection verification failed. Please check:');
+                error('1. WP Migrate DB plugin is installed and activated on remote site');
+                error('2. Connection key is correct and matches remote site');
+                error('3. Remote site is accessible and WP Migrate DB is properly configured');
+            } elseif (strpos($outputString, 'Connection refused') !== false) {
+                error('Connection refused. Please check:');
+                error('1. Remote site is accessible');
+                error('2. Firewall settings allow connections');
+                error('3. SSL certificate is valid');
+            }
+
             exit(1);
         }
+
+        info('Migration completed successfully');
 
         return implode("\n", $output);
     }
@@ -917,5 +1002,32 @@ class StagingCreateCommand extends BaseCommand
             error(print_r($e->errors(), true));
             exit();
         }
+    }
+
+    /**
+     * Display the WordPress admin credentials to the user.
+     */
+    private function displayCredentials(): void
+    {
+        info('');
+        info('Staging site ready on [https://'.$this->fullDomain().']. Build something unexpected.');
+        info('Admin ready on [https://'.$this->fullDomain().'/wp-admin]. Manage your website here.');
+    }
+
+    /**
+     * Display the server info to the user.
+     */
+    private function displayServerInfo(): void
+    {
+        $output = [
+            ['site domain: ', $this->fullDomain()],
+            ['server username: ', $this->siteIsolatedName()],
+            ['Site id: ', $this->siteId()],
+            ['DB name', $this->dbName()],
+            ['DB username', $this->dbUsername()],
+            ['DB password', $this->dbPassword()],
+        ];
+
+        table(['Key', 'Value'], $output);
     }
 }
