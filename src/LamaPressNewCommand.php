@@ -27,6 +27,8 @@ class LamaPressNewCommand extends BaseCommand
 
     private const THEME_BOILERPLATE_REPO = 'https://github.com/lamalamaNL/lamapress.git';
 
+    private const THEME_BOILERPLATE_REPO_SSH = 'git@github.com:lamalamaNL/lamapress.git';
+
     private const PLUGIN_DOWNLOAD_URL = 'https://downloads.lamapress.nl';
 
     private const ADMIN_USERS = [
@@ -53,6 +55,7 @@ class LamaPressNewCommand extends BaseCommand
         'wp-mail-smtp',
         'tiny-compress-images',
         'duplicate-post',
+        'restricted-site-access',
     ];
 
     private const INACTIVE_PLUGINS = [
@@ -211,7 +214,7 @@ class LamaPressNewCommand extends BaseCommand
     {
         $commands = [
             'cd '.$this->directory,
-            'wp core install --url="http://'.$this->name.'.test" --title="'.ucfirst($this->name).'" --admin_user="'.$this->user.'" --admin_password="'.$this->password.'" --admin_email="'.$this->email.'"',
+            'wp core install --url="http://'.$this->name.'.test" --title="'.ucfirst($this->name).'" --admin_user="'.$this->user.'" --admin_password="'.$this->password.'" --admin_email="'.$this->email.'" --skip-plugins --skip-themes',
 
             'wp option update blog_public 0',
             'wp post delete $(wp post list --post_type=post --posts_per_page=1 --post_status=publish --post_name="hello-world" --field=ID)',
@@ -221,9 +224,12 @@ class LamaPressNewCommand extends BaseCommand
             'wp option update show_on_front "page"',
             'wp option update page_on_front $(wp post list --post_type=page --post_status=publish --posts_per_page=1 --post_name="home" --field=ID --format=ids)',
             'wp option update timezone_string "Europe/Amsterdam"',
-            'wp option update date_format "m/d/Y"',
+            'wp option update date_format "d/m/Y"',
             'wp option update time_format "H:i"',
             'wp option update start_of_week 1',
+            'wp option update default_pingback_flag closed',
+            'wp option update default_ping_status closed',
+            'wp option update default_comment_status closed',
             'wp rewrite structure "/%postname%/" --hard',
         ];
 
@@ -242,6 +248,34 @@ class LamaPressNewCommand extends BaseCommand
             $commands[] = 'wp user create '.$username.' '.$email.' --role=administrator --user_pass='.$password;
         }
         $this->runCommands($commands, $this->input, $this->output);
+
+        // Configure dashboard widgets for each user to show only 'At a Glance'
+        $this->configureDashboardWidgets();
+    }
+
+    /**
+     * Configure dashboard widgets for all users to show only 'At a Glance'.
+     */
+    private function configureDashboardWidgets(): void
+    {
+        $commands = [];
+
+        // Get all user IDs
+        $commands[] = 'cd '.$this->directory;
+        $commands[] = 'wp user list --field=ID';
+
+        $this->runCommands($commands, $this->input, $this->output);
+
+        // Configure dashboard widgets for each user
+        foreach (self::ADMIN_USERS as $username => $email) {
+            $hiddenWidgets = 'a:3:{i:0;s:32:"wp_mail_smtp_reports_widget_lite";i:1;s:24:"wpseo-dashboard-overview";i:2;s:32:"wpseo-wincher-dashboard-overview";}';
+
+            $dashboardWidgets = [
+                'cd '.$this->directory,
+                'wp user meta set '.$username.' metaboxhidden_dashboard '.$hiddenWidgets,
+            ];
+            $this->runCommands($dashboardWidgets, $this->input, $this->output);
+        }
     }
 
     /**
@@ -310,10 +344,18 @@ class LamaPressNewCommand extends BaseCommand
      */
     private function setupTheme(): void
     {
+        $themesPath = $this->directory.'/wp-content/themes';
+
+        // First, verify the themes directory exists
+        if (! is_dir($themesPath)) {
+            throw new RuntimeException("Themes directory does not exist: {$themesPath}");
+        }
+
+        // Clone the theme with timeout and error handling
+        $this->cloneTheme($themesPath);
+
         $commands = [
-            'cd '.$this->directory.'/wp-content/themes',
-            'git clone '.self::THEME_BOILERPLATE_REPO.' '.$this->name,
-            'cd '.$this->name,
+            'cd '.$themesPath.'/'.$this->name,
 
             // Remove TODO.md
             'rm -rf TODO.md',
@@ -368,6 +410,164 @@ hot
         ];
 
         $this->runCommands($commands, $this->input, $this->output);
+    }
+
+    /**
+     * Clone the theme repository with proper error handling and timeout.
+     */
+    private function cloneTheme(string $themesPath): void
+    {
+        // Check network connectivity first
+        $this->checkNetworkConnectivity();
+
+        // Try HTTPS first, then SSH as fallback
+        $repositories = [self::THEME_BOILERPLATE_REPO, self::THEME_BOILERPLATE_REPO_SSH];
+        $repoNames = ['HTTPS', 'SSH'];
+
+        foreach ($repositories as $index => $repo) {
+            $this->output->writeln("<fg=cyan>Trying {$repoNames[$index]} repository...</>");
+
+            try {
+                $this->attemptCloneWithRepo($themesPath, $repo);
+
+                return; // Success, exit
+            } catch (RuntimeException $e) {
+                if ($index === count($repositories) - 1) {
+                    // Last repository failed, provide helpful error message
+                    $this->output->writeln('<fg=red>❌ All clone attempts failed</>');
+                    $this->output->writeln('');
+                    $this->output->writeln('<fg=yellow>💡 Troubleshooting tips:</>');
+                    $this->output->writeln('1. Check your internet connection');
+                    $this->output->writeln('2. Verify GitHub access: https://github.com/lamalamaNL/lamapress');
+                    $this->output->writeln('3. Check if you\'re behind a corporate firewall');
+                    $this->output->writeln('4. Try running: git clone https://github.com/lamalamaNL/lamapress.git test');
+                    $this->output->writeln('5. Set up SSH keys: ssh-keygen -t ed25519 -C "your_email@example.com"');
+                    $this->output->writeln('6. Authenticate with GitHub CLI: gh auth login');
+                    $this->output->writeln('');
+
+                    throw $e;
+                }
+
+                $this->output->writeln("<fg=yellow>⚠️  {$repoNames[$index]} failed, trying {$repoNames[$index + 1]}...</>");
+            }
+        }
+    }
+
+    /**
+     * Check network connectivity to GitHub.
+     */
+    private function checkNetworkConnectivity(): void
+    {
+        $this->output->write('Checking network connectivity... ');
+
+        $process = Process::fromShellCommandline('ping -c 1 github.com', null, null, null, 10);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $this->output->writeln('<fg=red>❌ No internet connection</>');
+            throw new RuntimeException('No internet connection detected. Please check your network settings.');
+        }
+
+        $this->output->writeln('<fg=green>✅ Connected</>');
+    }
+
+    /**
+     * Attempt to clone the theme repository with a specific URL.
+     */
+    private function attemptCloneWithRepo(string $themesPath, string $repositoryUrl): void
+    {
+        // First check if repository is accessible
+        $this->checkRepositoryAccess($repositoryUrl);
+
+        $cloneCommand = 'git clone '.$repositoryUrl.' '.$this->name;
+        $fullCommand = 'cd '.$themesPath.' && '.$cloneCommand;
+
+        $this->output->writeln("Cloning theme from: {$repositoryUrl}");
+        $this->output->writeln("Target directory: {$themesPath}/{$this->name}");
+
+        // Remove any existing partial clone
+        $themePath = $themesPath.'/'.$this->name;
+        if (is_dir($themePath)) {
+            $this->output->writeln("Removing existing directory: {$themePath}");
+            $this->runCommands(['rm -rf '.$themePath], $this->input, $this->output);
+        }
+
+        $process = Process::fromShellCommandline($fullCommand, null, null, null, 300); // 5 minute timeout
+
+        $output = $this->output;
+        $process->run(function ($type, $line) use ($output) {
+            if ($type === Process::OUT) {
+                $output->write('    '.$line);
+            } elseif ($type === Process::ERR) {
+                $output->write('    <fg=red>'.$line.'</>');
+            }
+        });
+
+        if (! $process->isSuccessful()) {
+            $error = $process->getErrorOutput();
+            $exitCode = $process->getExitCode();
+
+            // Clean up any partial clone
+            if (is_dir($themePath)) {
+                $this->runCommands(['rm -rf '.$themePath], $this->input, $this->output);
+            }
+
+            // Check for authentication errors specifically
+            if (strpos($error, 'Username') !== false || strpos($error, 'Authentication') !== false) {
+                throw new RuntimeException(
+                    "Authentication required for private repository.\n".
+                    "Please ensure you have access to: {$repositoryUrl}\n".
+                    "You may need to authenticate with GitHub or check your SSH keys.\n".
+                    "Try running: git clone {$repositoryUrl} test"
+                );
+            }
+
+            throw new RuntimeException(
+                "Failed to clone theme repository. Exit code: {$exitCode}\n".
+                "Error: {$error}\n".
+                "Repository: {$repositoryUrl}"
+            );
+        }
+
+        // Verify the clone was successful
+        if (! is_dir($themePath) || ! is_dir($themePath.'/.git')) {
+            throw new RuntimeException("Theme clone verification failed. Directory not found or not a git repository: {$themePath}");
+        }
+
+        $this->output->writeln('✅ Theme cloned successfully');
+    }
+
+    /**
+     * Check if the repository is accessible.
+     */
+    private function checkRepositoryAccess(string $repositoryUrl): void
+    {
+        $this->output->write('Checking repository access... ');
+
+        $process = Process::fromShellCommandline('git ls-remote '.$repositoryUrl, null, null, null, 30);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            $error = $process->getErrorOutput();
+
+            if (strpos($error, 'Username') !== false || strpos($error, 'Authentication') !== false) {
+                $this->output->writeln('<fg=red>❌ Authentication required</>');
+                throw new RuntimeException(
+                    "Repository requires authentication: {$repositoryUrl}\n".
+                    "Please ensure you have access to this private repository.\n".
+                    "You may need to:\n".
+                    "1. Authenticate with GitHub CLI: gh auth login\n".
+                    "2. Set up SSH keys for Git\n".
+                    "3. Use a personal access token\n".
+                    '4. Contact the repository owner for access'
+                );
+            }
+
+            $this->output->writeln('<fg=red>❌ Repository not accessible</>');
+            throw new RuntimeException('Repository not accessible: '.$error);
+        }
+
+        $this->output->writeln('<fg=green>✅ Access confirmed</>');
     }
 
     /**
@@ -451,6 +651,7 @@ hot
     {
         info('');
         info("LamaPress ready on [http://{$this->name}.test]. Build something unexpected.");
+        info("Admin ready on [http://{$this->name}.test/wp-admin]. Manage your website here.");
         info("Username: {$this->user}");
         info("Password: {$this->password}");
     }
