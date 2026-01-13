@@ -12,7 +12,7 @@ class BaseCommand extends Command
     /**
      * Run the given commands.
      */
-    protected function runCommands($commands, InputInterface $input, OutputInterface $output, ?string $workingPath = null, array $env = []): Process
+    protected function runCommands($commands, InputInterface $input, OutputInterface $output, ?string $workingPath = null, array $env = [], bool $suppressOutput = false): Process
     {
         if (! $output->isDecorated()) {
             $commands = array_map(function ($value) {
@@ -42,20 +42,32 @@ class BaseCommand extends Command
             }, $commands);
         }
         $allCommands = implode(' && ', $commands);
-        $output->writeln($allCommands);
+
+        // Only output commands if not suppressed (e.g., when running in spinner)
+        if (! $suppressOutput) {
+            $output->writeln($allCommands);
+        }
+
         $process = Process::fromShellCommandline($allCommands, $workingPath, $env, null, null);
 
         if ('\\' !== DIRECTORY_SEPARATOR && file_exists('/dev/tty') && is_readable('/dev/tty')) {
             try {
                 $process->setTty(true);
             } catch (RuntimeException $e) {
-                $output->writeln('  <bg=yellow;fg=black> WARN </> '.$e->getMessage().PHP_EOL);
+                if (! $suppressOutput) {
+                    $output->writeln('  <bg=yellow;fg=black> WARN </> '.$e->getMessage().PHP_EOL);
+                }
             }
         }
 
-        $process->run(function ($type, $line) use ($output) {
-            $output->write('    '.$line);
-        });
+        // Suppress output callback when running in spinner
+        if ($suppressOutput) {
+            $process->run();
+        } else {
+            $process->run(function ($type, $line) use ($output) {
+                $output->write('    '.$line);
+            });
+        }
 
         return $process;
     }

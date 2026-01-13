@@ -12,13 +12,18 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\alert;
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\outro;
+use function Laravel\Prompts\password;
 use function Laravel\Prompts\select;
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\text;
+use function Laravel\Prompts\warning;
 
 class StagingCreateCommand extends BaseCommand
 {
@@ -78,6 +83,8 @@ class StagingCreateCommand extends BaseCommand
 
     private ?string $wpPassword = null;
 
+    private ?int $organizationId = null;
+
     /**
      * Configure the command options.
      */
@@ -98,15 +105,7 @@ class StagingCreateCommand extends BaseCommand
         $this->input = $input;
         $this->output = $output;
 
-        $output->write('<fg=white>
- ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
- ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
-
+        intro('Lama Lama CLLI - Create Staging Environment');
     }
 
     /**
@@ -156,6 +155,8 @@ class StagingCreateCommand extends BaseCommand
         $this->displayCredentials();
         $this->displayServerInfo();
 
+        outro('Staging environment created successfully!');
+
         return Command::SUCCESS;
     }
 
@@ -164,11 +165,22 @@ class StagingCreateCommand extends BaseCommand
      */
     private function initializeCommand(): void
     {
-        $this->forge = new Forge($this->getForgeToken());
+        $this->logVerbose('Initializing Forge client...');
+        $forgeToken = $this->getForgeToken();
+        $this->logVerbose('Forge token retrieved (length: '.strlen($forgeToken).' chars)');
+
+        $this->forge = new Forge($forgeToken);
         $this->forge->setTimeout(300);
+        $this->logVerbose('Forge client initialized with 300s timeout');
+
         $this->serverId = $this->getServerId();
+        $this->logVerbose("Server ID: {$this->serverId}");
+
         $this->subdomain = $this->getSubdomain();
+        $this->logVerbose("Subdomain: {$this->subdomain}");
+
         $this->repo = $this->calulateRepo();
+        $this->logVerbose("Repository: {$this->repo}");
     }
 
     /**
@@ -210,11 +222,15 @@ class StagingCreateCommand extends BaseCommand
                 info($help);
 
                 if ($key === 'forge_server_id') {
+                    $this->logVerbose('Fetching servers from Forge API...');
                     $this->forge = new Forge($this->getForgeToken());
+                    $this->logVerbose('Calling forge->servers()...');
                     $servers = $this->forge->servers();
+                    $this->logVerbose('Servers retrieved: '.count($servers));
                     $serverChoices = [];
                     foreach ($servers as $server) {
                         $serverChoices[$server->id] = $server->name;
+                        $this->logVerbose("Server: {$server->id} - {$server->name}");
                     }
 
                     $value = select(
@@ -222,11 +238,29 @@ class StagingCreateCommand extends BaseCommand
                         options: $serverChoices,
                         required: true
                     );
+                    $this->logVerbose("Selected server ID: {$value}");
                 } else {
-                    $value = text(
-                        label: "CLLI config is missing the $key key. Please provide a value",
-                        required: true
-                    );
+                    $hint = match ($key) {
+                        'forge_token' => 'Get this from https://forge.laravel.com/user/profile#/api',
+                        'cloudflare_token' => 'Generate via \'Create Token\' at https://dash.cloudflare.com/profile/api-tokens',
+                        'cloudflare_zone_id' => 'Found in the Overview tab of your domain on https://dash.cloudflare.com',
+                        'wp_migrate_license_key' => 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
+                        default => $help,
+                    };
+
+                    if (in_array($key, ['forge_token', 'cloudflare_token', 'wp_migrate_license_key'])) {
+                        $value = password(
+                            label: "CLLI config is missing the $key key. Please provide a value",
+                            hint: $hint,
+                            required: true
+                        );
+                    } else {
+                        $value = text(
+                            label: "CLLI config is missing the $key key. Please provide a value",
+                            hint: $hint,
+                            required: true
+                        );
+                    }
                 }
                 $this->cfg->set($key, $value);
             }
@@ -241,7 +275,7 @@ class StagingCreateCommand extends BaseCommand
     private function checkThemeFolder(): bool
     {
         if (! str_contains(getcwd(), 'wp-content/themes/')) {
-            error('⚠️  Theme folder not found, run this command from the theme folder');
+            error('Theme folder not found. Run this command from the theme folder.');
             exit(1);
         }
 
@@ -263,12 +297,60 @@ class StagingCreateCommand extends BaseCommand
             'php_version' => 'php83',
         ];
 
+        // Add organization ID (required for organizations with multiple owners)
+        // The legacy API requires organization_id when an organization has multiple owners
+        $organizationId = $this->getOrganizationId();
+        if ($organizationId) {
+            $config['organization_id'] = $organizationId;
+            $this->logVerbose("Organization ID: {$organizationId}");
+        } else {
+            $this->logVerbose('WARNING: No organization ID found - attempting to create site without it');
+            $this->logVerbose('If your organization has multiple owners, this will fail');
+        }
+
+        $this->logVerbose('Creating site with config:');
+        $this->logVerbose(json_encode($config, JSON_PRETTY_PRINT));
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose('Organization ID in config: '.($config['organization_id'] ?? 'NOT SET'));
+
         try {
+            $this->logVerbose('Calling forge->createSite()...');
+            $this->logVerbose('Request payload that will be sent:');
+            $this->logVerbose(json_encode($config, JSON_PRETTY_PRINT));
             $this->site = $this->forge->createSite($this->serverId, $config);
+            $this->logVerbose('Site created successfully!');
+            $this->logVerbose("Site ID: {$this->site->id}");
+            $this->logVerbose("Site Name: {$this->site->name}");
+            $this->logVerbose('Site Status: '.($this->site->status ?? 'N/A'));
+            $this->logVerbose('Site Directory: '.($this->site->directory ?? 'N/A'));
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
+
+            // Check if the error is about organization
+            $errors = $e->errors();
+            if (isset($errors['organization']) && ! $organizationId) {
+                warning('Your organization has multiple owners and requires an organization ID.');
+                alert('The organization ID could not be automatically detected.');
+                info('');
+                info('Please set your organization ID manually:');
+                info('  clli config:update forge_organization_id');
+                info('');
+                info('You can find your organization ID in the Forge dashboard URL:');
+                info('  https://forge.laravel.com/organizations/{organization_id}/servers');
+                exit(1);
+            }
+
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
 
         return $this->site;
@@ -279,16 +361,34 @@ class StagingCreateCommand extends BaseCommand
      */
     private function createDatabase(): void
     {
+        $dbConfig = [
+            'name' => $this->dbName(),
+            'user' => $this->dbUsername(),
+            'password' => $this->dbPassword(),
+        ];
+
+        $this->logVerbose('Creating database with config:');
+        $this->logVerbose(json_encode(array_merge($dbConfig, ['password' => '***REDACTED***']), JSON_PRETTY_PRINT));
+        $this->logVerbose("Server ID: {$this->serverId}");
+
         try {
-            $this->forge->createDatabase($this->serverId, [
-                'name' => $this->dbName(),
-                'user' => $this->dbUsername(),
-                'password' => $this->dbPassword(),
-            ]);
+            $this->logVerbose('Calling forge->createDatabase()...');
+            $result = $this->forge->createDatabase($this->serverId, $dbConfig);
+            $this->logVerbose('Database created successfully!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
     }
 
@@ -300,8 +400,9 @@ class StagingCreateCommand extends BaseCommand
         // Get Cloudflare credentials from config
         $cfToken = $this->cfg->get('cloudflare_token');
         if (! $cfToken) {
-            $cfToken = text(
+            $cfToken = password(
                 label: 'We need a Cloudflare API token for DNS updates. Please provide your token:',
+                hint: 'Generate via \'Create Token\' at https://dash.cloudflare.com/profile/api-tokens',
                 required: true
             );
             $this->cfg->set('cloudflare_token', $cfToken);
@@ -311,6 +412,7 @@ class StagingCreateCommand extends BaseCommand
         if (! $cfZoneId) {
             $cfZoneId = text(
                 label: 'We need your Cloudflare Zone ID for lamalama.dev:',
+                hint: 'Found in the Overview tab of your domain on https://dash.cloudflare.com',
                 required: true
             );
             $this->cfg->set('cloudflare_zone_id', $cfZoneId);
@@ -339,7 +441,7 @@ class StagingCreateCommand extends BaseCommand
                     ]
                 );
 
-                info('⚠️ Existing DNS record updated');
+                warning('Existing DNS record updated');
             } else {
                 // Create new record
                 $result = $dns->addRecord(
@@ -367,10 +469,30 @@ class StagingCreateCommand extends BaseCommand
      */
     private function installSsl(): mixed
     {
+        $sslConfig = ['domains' => [$this->fullDomain()]];
+        $this->logVerbose('Installing SSL certificate...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+        $this->logVerbose('SSL config: '.json_encode($sslConfig, JSON_PRETTY_PRINT));
+
         try {
-            return $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), ['domains' => [$this->fullDomain()]], true);
+            $this->logVerbose('Calling forge->obtainLetsEncryptCertificate()...');
+            $result = $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), $sslConfig, true);
+            $this->logVerbose('SSL certificate installation initiated!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
+
+            return $result;
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
             throw new \RuntimeException('Error installing SSL: '.$e->getMessage());
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
     }
 
@@ -379,7 +501,9 @@ class StagingCreateCommand extends BaseCommand
      */
     private function installWordPress()
     {
+        $this->logVerbose('Installing WordPress...');
         $themeFolderName = explode('/', $this->repo)[1];
+        $this->logVerbose("Theme folder name: {$themeFolderName}");
 
         $commands = [
             // Go to site root
@@ -401,7 +525,9 @@ class StagingCreateCommand extends BaseCommand
             'wp core install --url="https://'.$this->fullDomain().'" --title="'.ucfirst($themeFolderName).'" --admin_user="'.$this->wpUser().'" --admin_password="'.$this->wpPassword().'" --admin_email="'.$this->wpUserEmail().'"',
         ];
 
-        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+        $commandString = collect($commands)->implode(' && ');
+        $this->logVerbose("WordPress installation commands:\n{$commandString}");
+        $this->runCommandViaDeployScript($commandString);
     }
 
     /**
@@ -409,6 +535,8 @@ class StagingCreateCommand extends BaseCommand
      */
     private function installPlugins()
     {
+        $this->logVerbose('Installing WordPress plugins...');
+
         $commands = [
             // Go to site root
             'cd $FORGE_SITE_PATH/public',
@@ -441,7 +569,9 @@ class StagingCreateCommand extends BaseCommand
             '    echo "Restarting FPM..."; sudo -S service $FORGE_PHP_FPM reload ) 9>/tmp/fpmlock',
         ];
 
-        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+        $commandString = collect($commands)->implode(' && ');
+        $this->logVerbose("Plugin installation commands:\n{$commandString}");
+        $this->runCommandViaDeployScript($commandString);
     }
 
     /**
@@ -449,7 +579,11 @@ class StagingCreateCommand extends BaseCommand
      */
     private function installTheme()
     {
+        $this->logVerbose('Installing theme...');
         $themeFolderName = explode('/', $this->repo)[1];
+        $this->logVerbose("Theme folder name: {$themeFolderName}");
+        $this->logVerbose("Repository: {$this->repo}");
+        $this->logVerbose('Branch: '.self::DEFAULT_BRANCH);
 
         $commands = [
             // Go to themes folder
@@ -465,7 +599,9 @@ class StagingCreateCommand extends BaseCommand
             'wp theme delete twentytwentyfive',
         ];
 
-        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+        $commandString = collect($commands)->implode(' && ');
+        $this->logVerbose("Theme installation commands:\n{$commandString}");
+        $this->runCommandViaDeployScript($commandString);
     }
 
     /**
@@ -473,9 +609,26 @@ class StagingCreateCommand extends BaseCommand
      */
     private function runCommandViaApi(string $command): mixed
     {
-        $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), ['command' => $command]);
+        $this->logVerbose('Executing site command via API...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+        $this->logVerbose("Command: {$command}");
 
-        return $siteCommand;
+        try {
+            $this->logVerbose('Calling forge->executeSiteCommand()...');
+            $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), ['command' => $command]);
+            $this->logVerbose('Command executed successfully!');
+            $this->logVerbose('Command ID: '.($siteCommand->id ?? 'N/A'));
+            $this->logVerbose('Command Status: '.($siteCommand->status ?? 'N/A'));
+            $this->logVerbose('Full response: '.json_encode($siteCommand, JSON_PRETTY_PRINT));
+
+            return $siteCommand;
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
+        }
     }
 
     /**
@@ -483,10 +636,29 @@ class StagingCreateCommand extends BaseCommand
      */
     private function runCommandViaDeployScript(string $command): mixed
     {
-        $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
-        $result = $this->forge->deploySite($this->serverId, $this->siteId());
+        $this->logVerbose('Running command via deployment script...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+        $this->logVerbose("Command: {$command}");
 
-        return $result;
+        try {
+            $this->logVerbose('Calling forge->updateSiteDeploymentScript()...');
+            $updateResult = $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
+            $this->logVerbose('Deployment script updated!');
+            $this->logVerbose('Update result: '.json_encode($updateResult, JSON_PRETTY_PRINT));
+
+            $this->logVerbose('Calling forge->deploySite()...');
+            $result = $this->forge->deploySite($this->serverId, $this->siteId());
+            $this->logVerbose('Deployment initiated!');
+            $this->logVerbose('Deploy result: '.json_encode($result, JSON_PRETTY_PRINT));
+
+            return $result;
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
+        }
     }
 
     /**
@@ -498,7 +670,11 @@ class StagingCreateCommand extends BaseCommand
         if ($serverId) {
             return $serverId;
         }
-        $serverId = text(label: 'We need a forge server ID for this command. Please provide a forge server ID', required: true);
+        $serverId = text(
+            label: 'We need a forge server ID for this command. Please provide a forge server ID',
+            hint: 'You can find this in your Forge dashboard URL or by listing servers',
+            required: true
+        );
         $this->cfg->set('forge_server_id', $serverId);
 
         return $serverId;
@@ -513,7 +689,11 @@ class StagingCreateCommand extends BaseCommand
         if ($forgeToken) {
             return $forgeToken;
         }
-        $forgeToken = text(label: 'We need a forge token for this command. Please provide a forge token', required: true);
+        $forgeToken = password(
+            label: 'We need a forge token for this command. Please provide a forge token',
+            hint: 'Get this from https://forge.laravel.com/user/profile#/api',
+            required: true
+        );
         $this->cfg->set('forge_token', $forgeToken);
 
         return $forgeToken;
@@ -528,7 +708,11 @@ class StagingCreateCommand extends BaseCommand
         if ($migrateDbLicenseKey) {
             return $migrateDbLicenseKey;
         }
-        $migrateDbLicenseKey = text(label: 'We need a Migrate DB license key for this command. Please provide a Migrate DB license key', required: true);
+        $migrateDbLicenseKey = password(
+            label: 'We need a Migrate DB license key for this command. Please provide a Migrate DB license key',
+            hint: 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
+            required: true
+        );
         $this->cfg->set('wp_migrate_license_key', $migrateDbLicenseKey);
 
         return $migrateDbLicenseKey;
@@ -544,8 +728,12 @@ class StagingCreateCommand extends BaseCommand
             return $subdomain;
         }
 
-        return text(label: 'What is the subdomain we need to deploy to', required: true);
-
+        return text(
+            label: 'What is the subdomain we need to deploy to',
+            placeholder: 'E.g. projectname',
+            hint: 'This will create: projectname.lamalama.dev',
+            required: true
+        );
     }
 
     /**
@@ -627,6 +815,155 @@ class StagingCreateCommand extends BaseCommand
     }
 
     /**
+     * Get the organization ID from the server or organizations API
+     */
+    private function getOrganizationId(): ?int
+    {
+        if ($this->organizationId !== null) {
+            return $this->organizationId;
+        }
+
+        // First check if it's stored in config
+        $orgId = $this->cfg->get('forge_organization_id');
+        if ($orgId) {
+            $this->logVerbose("Organization ID from config: {$orgId}");
+
+            return $this->organizationId = (int) $orgId;
+        }
+
+        // Fetch from server
+        $this->logVerbose('Fetching organization ID from server...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+
+        try {
+            $this->logVerbose('Calling forge->server()...');
+            $server = $this->forge->server($this->serverId);
+            $this->logVerbose('Server retrieved!');
+            $this->logVerbose('Server data: '.json_encode($server, JSON_PRETTY_PRINT));
+
+            // Check for organization_id property (may be named differently)
+            $orgId = $server->organizationId ?? $server->organization_id ?? null;
+
+            if ($orgId) {
+                $this->logVerbose("Organization ID from server: {$orgId}");
+                $this->cfg->set('forge_organization_id', $orgId);
+
+                return $this->organizationId = (int) $orgId;
+            }
+
+            $this->logVerbose('No organization ID found on server object, trying to fetch organizations...');
+
+            // Try to fetch organizations from API - check multiple possible method names
+            $organizations = null;
+            if (method_exists($this->forge, 'organizations')) {
+                try {
+                    $this->logVerbose('Calling forge->organizations()...');
+                    $organizations = $this->forge->organizations();
+                } catch (\Exception $e) {
+                    $this->logVerbose('Error calling organizations(): '.$e->getMessage());
+                }
+            }
+
+            // Try alternative method name
+            if (! $organizations && method_exists($this->forge, 'getOrganizations')) {
+                try {
+                    $this->logVerbose('Calling forge->getOrganizations()...');
+                    $organizations = $this->forge->getOrganizations();
+                } catch (\Exception $e) {
+                    $this->logVerbose('Error calling getOrganizations(): '.$e->getMessage());
+                }
+            }
+
+            if ($organizations && is_array($organizations)) {
+                $this->logVerbose('Organizations retrieved: '.count($organizations));
+
+                if (count($organizations) === 1) {
+                    $orgId = $organizations[0]->id ?? $organizations[0]->organizationId ?? $organizations[0]->organization_id ?? null;
+                    if ($orgId) {
+                        $this->logVerbose("Organization ID from organizations API: {$orgId}");
+                        $this->cfg->set('forge_organization_id', $orgId);
+
+                        return $this->organizationId = (int) $orgId;
+                    }
+                } elseif (count($organizations) > 1) {
+                    // Multiple organizations - let user select
+                    $this->logVerbose('Multiple organizations found, prompting user to select...');
+                    $orgChoices = [];
+                    foreach ($organizations as $org) {
+                        $orgId = $org->id ?? $org->organizationId ?? $org->organization_id ?? null;
+                        $orgName = $org->name ?? $org->organizationName ?? "Organization {$orgId}";
+                        if ($orgId) {
+                            $orgChoices[$orgId] = $orgName;
+                            $this->logVerbose("Organization: {$orgId} - {$orgName}");
+                        }
+                    }
+
+                    if (! empty($orgChoices)) {
+                        $selectedOrgId = select(
+                            label: 'Your organization has multiple owners. Please select an organization:',
+                            options: $orgChoices,
+                            required: true
+                        );
+
+                        $this->logVerbose("Selected organization ID: {$selectedOrgId}");
+                        $this->cfg->set('forge_organization_id', $selectedOrgId);
+
+                        return $this->organizationId = (int) $selectedOrgId;
+                    }
+                }
+            } else {
+                $this->logVerbose('Could not fetch organizations from API - method may not exist or returned null');
+            }
+
+            // If we still don't have an organization ID, prompt the user
+            $this->logVerbose('No organization ID found - prompting user to provide it');
+            warning('Your organization has multiple owners, but the organization ID could not be automatically detected.');
+            info('You can find your organization ID in the Forge dashboard URL when viewing an organization.');
+            info('Example: https://forge.laravel.com/organizations/{organization_id}/servers');
+
+            $manualOrgId = text(
+                label: 'Please enter your organization ID (or press Enter to skip and try without it):',
+                placeholder: 'E.g. 12345',
+                hint: 'Found in the Forge dashboard URL',
+                required: false
+            );
+
+            if ($manualOrgId) {
+                $this->logVerbose("Organization ID provided manually: {$manualOrgId}");
+                $this->cfg->set('forge_organization_id', $manualOrgId);
+
+                return $this->organizationId = (int) $manualOrgId;
+            }
+
+            $this->logVerbose('No organization ID provided - will attempt without it');
+
+            return null;
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+
+            // If there's an error, still prompt the user
+            warning('Error fetching organization ID: '.$e->getMessage());
+            $manualOrgId = text(
+                label: 'Please enter your organization ID manually (or press Enter to skip):',
+                placeholder: 'E.g. 12345',
+                hint: 'Found in the Forge dashboard URL',
+                required: false
+            );
+
+            if ($manualOrgId) {
+                $this->logVerbose("Organization ID provided manually after error: {$manualOrgId}");
+                $this->cfg->set('forge_organization_id', $manualOrgId);
+
+                return $this->organizationId = (int) $manualOrgId;
+            }
+
+            return null;
+        }
+    }
+
+    /**
      * Get the server IP address
      */
     private function serverIp(): string
@@ -635,7 +972,24 @@ class StagingCreateCommand extends BaseCommand
             return $this->ip;
         }
 
-        return $this->ip = $this->forge->server($this->serverId)?->ipAddress;
+        $this->logVerbose('Fetching server IP address...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+
+        try {
+            $this->logVerbose('Calling forge->server()...');
+            $server = $this->forge->server($this->serverId);
+            $this->logVerbose('Server retrieved!');
+            $this->logVerbose('Server data: '.json_encode($server, JSON_PRETTY_PRINT));
+            $ipAddress = $server?->ipAddress;
+            $this->logVerbose("IP Address: {$ipAddress}");
+
+            return $this->ip = $ipAddress;
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
+        }
     }
 
     /**
@@ -646,7 +1000,12 @@ class StagingCreateCommand extends BaseCommand
         $publicKeyFilename = $this->cfg->get('public_key_filename');
 
         if (! $publicKeyFilename) {
-            $publicKeyFilename = text(label: 'We need a public SSH key filename for this command. Please provide a public key filename', required: true);
+            $publicKeyFilename = text(
+                label: 'We need a public SSH key filename for this command. Please provide a public key filename',
+                placeholder: 'E.g. id_rsa',
+                hint: 'The filename of your SSH key in ~/.ssh/ (without .pub extension)',
+                required: true
+            );
             $this->cfg->set('public_key_filename', $publicKeyFilename);
         }
 
@@ -725,10 +1084,14 @@ class StagingCreateCommand extends BaseCommand
      */
     private function installSsh(): void
     {
+        $this->logVerbose('Installing SSH key...');
         $key = $this->getPublicKey();
         if (! $key) {
+            $this->logVerbose('ERROR: Could not get public SSH key');
             exit('Could not get your public SSH key.');
         }
+
+        $this->logVerbose('Public SSH key retrieved (length: '.strlen($key).' chars)');
 
         $payload = [
             'name' => self::SSH_KEY_NAME_PREFIX.Str::random('8'),
@@ -736,12 +1099,28 @@ class StagingCreateCommand extends BaseCommand
             'username' => $this->siteIsolatedName(),
         ];
 
+        $this->logVerbose('SSH key payload:');
+        $this->logVerbose(json_encode(array_merge($payload, ['key' => substr($payload['key'], 0, 50).'...']), JSON_PRETTY_PRINT));
+        $this->logVerbose("Server ID: {$this->serverId}");
+
         try {
-            $this->forge->createSSHKey($this->serverId, $payload);
+            $this->logVerbose('Calling forge->createSSHKey()...');
+            $result = $this->forge->createSSHKey($this->serverId, $payload);
+            $this->logVerbose('SSH key created successfully!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
     }
 
@@ -757,12 +1136,29 @@ class StagingCreateCommand extends BaseCommand
             'composer' => false,
         ];
 
+        $this->logVerbose('Installing empty repository...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+        $this->logVerbose('Payload: '.json_encode($payload, JSON_PRETTY_PRINT));
+
         try {
-            $this->forge->installGitRepositoryOnSite($this->serverId, $this->siteId(), $payload);
+            $this->logVerbose('Calling forge->installGitRepositoryOnSite()...');
+            $result = $this->forge->installGitRepositoryOnSite($this->serverId, $this->siteId(), $payload);
+            $this->logVerbose('Repository installed successfully!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
 
     }
@@ -772,7 +1168,9 @@ class StagingCreateCommand extends BaseCommand
      */
     private function setBuildScriptAndDeploy()
     {
+        $this->logVerbose('Setting build script and deploying...');
         $themeFolderName = explode('/', $this->repo)[1];
+        $this->logVerbose("Theme folder name: {$themeFolderName}");
 
         $commands = [
             // Go to theme folder
@@ -785,7 +1183,9 @@ class StagingCreateCommand extends BaseCommand
             'npm run build',
         ];
 
-        $this->runCommandViaDeployScript(collect($commands)->implode(' && '));
+        $commandString = collect($commands)->implode(' && ');
+        $this->logVerbose("Build commands:\n{$commandString}");
+        $this->runCommandViaDeployScript($commandString);
     }
 
     /**
@@ -824,7 +1224,23 @@ class StagingCreateCommand extends BaseCommand
 
         $command = implode("\n", $commands);
 
-        $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
+        $this->logVerbose('Setting final deployment script...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+        $this->logVerbose("Theme folder: {$themeFolderName}");
+        $this->logVerbose("Deployment script:\n{$command}");
+
+        try {
+            $this->logVerbose('Calling forge->updateSiteDeploymentScript()...');
+            $result = $this->forge->updateSiteDeploymentScript($this->serverId, $this->siteId(), $command);
+            $this->logVerbose('Deployment script updated successfully!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
+        }
     }
 
     /**
@@ -838,12 +1254,29 @@ class StagingCreateCommand extends BaseCommand
             'branch' => self::DEFAULT_BRANCH,
         ];
 
+        $this->logVerbose('Updating git remote...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+        $this->logVerbose('Payload: '.json_encode($payload, JSON_PRETTY_PRINT));
+
         try {
-            $this->forge->updateSiteGitRepository($this->serverId, $this->siteId(), $payload);
+            $this->logVerbose('Calling forge->updateSiteGitRepository()...');
+            $result = $this->forge->updateSiteGitRepository($this->serverId, $this->siteId(), $payload);
+            $this->logVerbose('Git remote updated successfully!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
     }
 
@@ -852,49 +1285,85 @@ class StagingCreateCommand extends BaseCommand
      */
     private function getMigrateDbConnectionKey(): string
     {
+        $this->logVerbose('Getting Migrate DB connection key...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+
         // First, check if WP Migrate DB plugin is installed and activated
         $checkCommand = ['command' => 'cd public && wp plugin is-active wp-migrate-db'];
+        $this->logVerbose('Checking if WP Migrate DB plugin is active...');
+        $this->logVerbose('Check command: '.json_encode($checkCommand, JSON_PRETTY_PRINT));
 
         try {
+            $this->logVerbose('Calling forge->executeSiteCommand() to check plugin status...');
             $checkResult = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $checkCommand);
             $checkSiteCommand = $checkResult;
+            $this->logVerbose("Command ID: {$checkSiteCommand->id}");
+            $this->logVerbose("Initial status: {$checkSiteCommand->status}");
 
             // Wait for command to complete
+            $waitCount = 0;
             while ($checkSiteCommand->status === 'running' || $checkSiteCommand->status === 'waiting') {
+                $waitCount++;
+                $this->logVerbose("Waiting for command to complete... (attempt {$waitCount})");
                 sleep(1);
+                $this->logVerbose('Calling forge->getSiteCommand() to check status...');
                 $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $checkSiteCommand->id);
                 $checkSiteCommand = $result[0];
+                $this->logVerbose("Status: {$checkSiteCommand->status}");
             }
 
+            $this->logVerbose("Final status: {$checkSiteCommand->status}");
+            $this->logVerbose('Output: '.($checkSiteCommand->output ?? 'N/A'));
+
             if ($checkSiteCommand->status === 'finished' && trim($checkSiteCommand->output) !== 'Active') {
+                $this->logVerbose('ERROR: WP Migrate DB plugin is not active');
                 error('WP Migrate DB plugin is not active on remote site. Please install and activate it first.');
                 exit(1);
             }
         } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
             error('Error checking WP Migrate DB plugin status: '.$e->getMessage());
             exit(1);
         }
 
         $command = ['command' => 'cd public && wp migratedb setting get connection-key'];
+        $this->logVerbose('Getting connection key...');
+        $this->logVerbose('Command: '.json_encode($command, JSON_PRETTY_PRINT));
 
         try {
+            $this->logVerbose('Calling forge->executeSiteCommand() to get connection key...');
             $result = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), $command);
 
             $siteCommand = $result;
+            $this->logVerbose("Command ID: {$siteCommand->id}");
+            $this->logVerbose("Initial status: {$siteCommand->status}");
 
             // Wait for command to complete
+            $waitCount = 0;
             while ($siteCommand->status === 'running' || $siteCommand->status === 'waiting') {
+                $waitCount++;
+                $this->logVerbose("Waiting for command to complete... (attempt {$waitCount})");
                 sleep(1);
+                $this->logVerbose('Calling forge->getSiteCommand() to check status...');
                 $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $siteCommand->id);
                 $siteCommand = $result[0];
+                $this->logVerbose("Status: {$siteCommand->status}");
             }
+
+            $this->logVerbose("Final status: {$siteCommand->status}");
+            $this->logVerbose('Output: '.($siteCommand->output ?? 'N/A'));
 
             if ($siteCommand->status === 'finished') {
                 // Extract connection key from output
                 $output = trim($siteCommand->output);
+                $this->logVerbose('Trimmed output length: '.strlen($output));
 
                 // Check for common error messages
                 if (empty($output) || $output === 'Command output not found.' || $output === 'No output') {
+                    $this->logVerbose('ERROR: Failed to retrieve connection key');
                     error('Failed to retrieve connection key from remote site.');
                     error('This usually means:');
                     error('1. WP Migrate DB plugin is not properly configured on remote site');
@@ -907,19 +1376,28 @@ class StagingCreateCommand extends BaseCommand
 
                 // Validate connection key format
                 if (strlen($output) >= 30 && strlen($output) <= 50 && preg_match('/^[A-Za-z0-9+\/]+$/', $output)) {
+                    $this->logVerbose('Connection key validated successfully!');
+
                     return $output;
                 } else {
+                    $this->logVerbose('ERROR: Invalid connection key format');
+                    $this->logVerbose('Key length: '.strlen($output));
+                    $this->logVerbose('Key matches pattern: '.(preg_match('/^[A-Za-z0-9+\/]+$/', $output) ? 'yes' : 'no'));
                     error('Invalid connection key format received: '.$output);
                     error('Expected: 30-50 characters containing only A-Z, a-z, 0-9, +, and /');
                     error('Raw output: '.json_encode($output));
                     exit(1);
                 }
             } else {
+                $this->logVerbose("ERROR: Command failed with status: {$siteCommand->status}");
                 error('Command failed with status: '.$siteCommand->status);
                 error('Output: '.($siteCommand->output ?? 'No output'));
                 exit(1);
             }
         } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
             error('Error getting connection key: '.$e->getMessage());
             exit(1);
         }
@@ -930,18 +1408,27 @@ class StagingCreateCommand extends BaseCommand
      */
     private function migrateLocaleToRemote(): mixed
     {
+        $this->logVerbose('Starting migration from local to remote...');
+
         $localUrl = exec('wp option get siteurl');
+        $this->logVerbose("Local URL: {$localUrl}");
+
         $remoteUrl = 'https://'.$this->fullDomain();
+        $this->logVerbose("Remote URL: {$remoteUrl}");
+
         $migrateKey = $this->getMigrateDbConnectionKey();
+        $this->logVerbose('Connection key retrieved (length: '.strlen($migrateKey).' chars)');
 
         // Validate that we have a proper local URL
         if (empty($localUrl) || ! filter_var($localUrl, FILTER_VALIDATE_URL)) {
+            $this->logVerbose('ERROR: Invalid local URL');
             error('Invalid local URL detected: '.$localUrl);
             exit(1);
         }
 
         // Validate remote URL format
         if (! filter_var($remoteUrl, FILTER_VALIDATE_URL)) {
+            $this->logVerbose('ERROR: Invalid remote URL format');
             error('Invalid remote URL format: '.$remoteUrl);
             exit(1);
         }
@@ -955,27 +1442,36 @@ class StagingCreateCommand extends BaseCommand
             ' --media=all '.
             ' --plugin-files=all';
 
+        $this->logVerbose('Migration command: '.$command);
         info('Executing command: '.$command);
 
+        $this->logVerbose('Executing migration command...');
         exec($command, $output, $exitCode);
+        $this->logVerbose("Exit code: {$exitCode}");
+        $this->logVerbose('Output lines: '.count($output));
+        $this->logVerbose("Output:\n".implode("\n", $output));
 
         if ($exitCode !== 0) {
+            $this->logVerbose('ERROR: Migration failed');
             error('Migration failed with exit code: '.$exitCode);
             error('Command output: '.implode("\n", $output));
 
             // Provide specific error guidance based on common issues
             $outputString = implode("\n", $output);
             if (strpos($outputString, 'Version Mismatch') !== false) {
+                $this->logVerbose('Detected version mismatch error');
                 error('Version mismatch detected between local and remote WP Migrate DB plugins.');
                 error('Please update one of the plugins to match the other version.');
                 error('Local update: wp plugin update wp-migrate-db');
                 error('Remote update: Run wp plugin update wp-migrate-db on the remote site');
             } elseif (strpos($outputString, 'Invalid content verification signature') !== false) {
+                $this->logVerbose('Detected connection verification error');
                 error('Connection verification failed. Please check:');
                 error('1. WP Migrate DB plugin is installed and activated on remote site');
                 error('2. Connection key is correct and matches remote site');
                 error('3. Remote site is accessible and WP Migrate DB is properly configured');
             } elseif (strpos($outputString, 'Connection refused') !== false) {
+                $this->logVerbose('Detected connection refused error');
                 error('Connection refused. Please check:');
                 error('1. Remote site is accessible');
                 error('2. Firewall settings allow connections');
@@ -985,6 +1481,7 @@ class StagingCreateCommand extends BaseCommand
             exit(1);
         }
 
+        $this->logVerbose('Migration completed successfully!');
         info('Migration completed successfully');
 
         return implode("\n", $output);
@@ -995,12 +1492,30 @@ class StagingCreateCommand extends BaseCommand
      */
     private function enableQuickDeploy(): mixed
     {
+        $this->logVerbose('Enabling quick deploy...');
+        $this->logVerbose("Server ID: {$this->serverId}");
+        $this->logVerbose("Site ID: {$this->siteId()}");
+
         try {
-            return $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
+            $this->logVerbose('Calling forge->enableQuickDeploy()...');
+            $result = $this->forge->enableQuickDeploy($this->serverId, $this->siteId());
+            $this->logVerbose('Quick deploy enabled successfully!');
+            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
+
+            return $result;
         } catch (ValidationException $e) {
+            $this->logVerbose('ValidationException caught!');
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception errors:');
+            $this->logVerbose(print_r($e->errors(), true));
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
+        } catch (\Exception $e) {
+            $this->logVerbose('Exception caught: '.get_class($e));
+            $this->logVerbose('Exception message: '.$e->getMessage());
+            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+            throw $e;
         }
     }
 
@@ -1029,5 +1544,15 @@ class StagingCreateCommand extends BaseCommand
         ];
 
         table(['Key', 'Value'], $output);
+    }
+
+    /**
+     * Log verbose messages if verbose mode is enabled
+     */
+    private function logVerbose(string $message): void
+    {
+        if ($this->output->isVerbose()) {
+            $this->output->writeln("<fg=gray>[VERBOSE]</> {$message}");
+        }
     }
 }

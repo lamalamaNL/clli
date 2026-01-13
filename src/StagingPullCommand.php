@@ -8,6 +8,8 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\outro;
 use function Laravel\Prompts\text;
 
 class StagingPullCommand extends BaseCommand
@@ -42,25 +44,19 @@ class StagingPullCommand extends BaseCommand
 
         $this->configurePrompts($input, $output);
 
-        $output->write('<fg=white>
- ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░
- ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
+        intro('Lama Lama CLLI - Pull Staging Environment');
 
-        // Pattern doesnt work yet
-        $pattern = '/^https:\/\/[a-zA-Z0-9]+\.lamalama\.dev\s[a-zA-Z0-9+\-\/]+$/';
+        // Pattern for validation: URL followed by connection key
+        $pattern = '/^https:\/\/[a-zA-Z0-9\-]+\.lamalama\.dev\s+[a-zA-Z0-9+\-\/]+$/';
 
         $input->setArgument('connection_info', text(
             label: 'What is the WP Migrate DB connection info?',
             placeholder: 'E.g. https://projectx.lamalama.dev qQSr+EVrJ83uIkME/zQiCBb4V/nVaG1dzh5vmqEq',
+            hint: 'Format: <url> <connection-key> (space-separated)',
             required: 'The WP Migrate DB connection info is required.',
             validate: fn ($value) => preg_match($pattern, $value) !== 0
                 ? null
-                : null,
+                : 'Invalid format. Expected: https://domain.lamalama.dev <connection-key>',
         ));
     }
 
@@ -139,7 +135,7 @@ class StagingPullCommand extends BaseCommand
         ];
 
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
-            // $output->writeln('Config file created.'.PHP_EOL);
+            outro('Staging environment pulled successfully!');
         }
 
         return $process->getExitCode();

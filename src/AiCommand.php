@@ -8,6 +8,10 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\error;
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\outro;
+
 class AiCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
@@ -29,14 +33,7 @@ class AiCommand extends BaseCommand
     {
         parent::interact($input, $output);
 
-        $output->write('<fg=white>
- ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
- ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
+        intro('Lama Lama CLLI - AI Story');
     }
 
     /**
@@ -48,7 +45,7 @@ class AiCommand extends BaseCommand
         $yourApiKey = $config->get('openai_api_key');
 
         if (! $yourApiKey) {
-            $output->writeln('<error>API key not found in CLI config. Please set it using: clli config:update</error>');
+            error('API key not found in CLI config. Please set it using: clli config:update');
 
             return Command::FAILURE;
         }
@@ -61,6 +58,8 @@ class AiCommand extends BaseCommand
         ]);
 
         $output->writeln($response->outputText);
+
+        outro('Story generated successfully!');
 
         return Command::SUCCESS;
     }
