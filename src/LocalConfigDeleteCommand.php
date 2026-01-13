@@ -7,6 +7,8 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\outro;
 use function Laravel\Prompts\select;
 
 class LocalConfigDeleteCommand extends BaseCommand
@@ -30,14 +32,7 @@ class LocalConfigDeleteCommand extends BaseCommand
     {
         parent::interact($input, $output);
 
-        $output->write('<fg=white>
- ░▒▓██████▓▒░░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
-░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░      ░▒▓█▓▒░ 
- ░▒▓██████▓▒░░▒▓████████▓▒░▒▓████████▓▒░▒▓█▓▒░'.PHP_EOL.PHP_EOL);
+        intro('Lama Lama CLLI - Delete Configuration');
     }
 
     /**
@@ -73,7 +68,7 @@ class LocalConfigDeleteCommand extends BaseCommand
 
         $config->delete($selectedKey);
 
-        $output->writeln("<info>Successfully deleted '$selectedKey' from configuration.</info>");
+        outro("Successfully deleted '$selectedKey' from configuration.");
 
         return Command::SUCCESS;
     }

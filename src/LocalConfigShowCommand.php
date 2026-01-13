@@ -7,6 +7,9 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\outro;
+
 class LocalConfigShowCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
@@ -19,6 +22,16 @@ class LocalConfigShowCommand extends BaseCommand
         $this
             ->setName('config:show')
             ->setDescription('Show the local CLLI config file');
+    }
+
+    /**
+     * Interact with the user before validating the input.
+     */
+    protected function interact(InputInterface $input, OutputInterface $output): void
+    {
+        parent::interact($input, $output);
+
+        intro('Lama Lama CLLI - Show Configuration');
     }
 
     /**
@@ -37,6 +50,8 @@ class LocalConfigShowCommand extends BaseCommand
 
         // Format and output the JSON with indentation
         $output->writeln(json_encode($configData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+        outro('Configuration displayed successfully.');
 
         return Command::SUCCESS;
     }
