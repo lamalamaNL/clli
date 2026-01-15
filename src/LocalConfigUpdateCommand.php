@@ -89,12 +89,6 @@ class LocalConfigUpdateCommand extends BaseCommand
         // Create options array for select prompt
         $options = array_keys($configData);
 
-        if (empty($options)) {
-            $output->writeln('<error>No configurable keys found.</error>');
-
-            return Command::FAILURE;
-        }
-
         // Add option to create new key
         $options[] = '+ Create new key';
 

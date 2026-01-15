@@ -4,6 +4,7 @@ namespace LamaLama\Clli\Console;
 
 use Illuminate\Support\Str;
 use LamaLama\Clli\Console\Services\CliConfig;
+use Laravel\Forge\Exceptions\NotFoundException;
 use Laravel\Forge\Exceptions\ValidationException;
 use Laravel\Forge\Forge;
 use Laravel\Forge\Resources\Site;
@@ -11,8 +12,8 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Process\Process;
 
-use function Laravel\Prompts\alert;
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
@@ -115,8 +116,12 @@ class StagingCreateCommand extends BaseCommand
     {
         $this->cfg = new CliConfig;
 
+        // Run config check outside of spin() so prompts work correctly
+        info('Checking CLLI config...');
+        $this->checkClliConfig();
+        info('✅ CLLI config validated');
+
         $steps = [
-            ['checkClliConfig', 'Checking CLLI config'],
             ['checkThemeFolder', 'Theme folder check'],
             ['initializeCommand', 'Initializing command'],
             ['createSite', 'Creating site'],
@@ -294,19 +299,8 @@ class StagingCreateCommand extends BaseCommand
             'directory' => '/public',
             'isolated' => true,
             'username' => $this->siteIsolatedName(),
-            'php_version' => 'php83',
+            'php_version' => 'php84',
         ];
-
-        // Add organization ID (required for organizations with multiple owners)
-        // The legacy API requires organization_id when an organization has multiple owners
-        $organizationId = $this->getOrganizationId();
-        if ($organizationId) {
-            $config['organization_id'] = $organizationId;
-            $this->logVerbose("Organization ID: {$organizationId}");
-        } else {
-            $this->logVerbose('WARNING: No organization ID found - attempting to create site without it');
-            $this->logVerbose('If your organization has multiple owners, this will fail');
-        }
 
         $this->logVerbose('Creating site with config:');
         $this->logVerbose(json_encode($config, JSON_PRETTY_PRINT));
@@ -328,21 +322,6 @@ class StagingCreateCommand extends BaseCommand
             $this->logVerbose('Exception message: '.$e->getMessage());
             $this->logVerbose('Exception errors:');
             $this->logVerbose(print_r($e->errors(), true));
-
-            // Check if the error is about organization
-            $errors = $e->errors();
-            if (isset($errors['organization']) && ! $organizationId) {
-                warning('Your organization has multiple owners and requires an organization ID.');
-                alert('The organization ID could not be automatically detected.');
-                info('');
-                info('Please set your organization ID manually:');
-                info('  clli config:update forge_organization_id');
-                info('');
-                info('You can find your organization ID in the Forge dashboard URL:');
-                info('  https://forge.laravel.com/organizations/{organization_id}/servers');
-                exit(1);
-            }
-
             error('Validation error');
             error(print_r($e->errors(), true));
             exit();
@@ -475,25 +454,95 @@ class StagingCreateCommand extends BaseCommand
         $this->logVerbose("Site ID: {$this->siteId()}");
         $this->logVerbose('SSL config: '.json_encode($sslConfig, JSON_PRETTY_PRINT));
 
-        try {
-            $this->logVerbose('Calling forge->obtainLetsEncryptCertificate()...');
-            $result = $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), $sslConfig, true);
-            $this->logVerbose('SSL certificate installation initiated!');
-            $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
+        // Wait a bit for DNS propagation before attempting SSL installation
+        $this->logVerbose('Waiting 10 seconds for DNS propagation...');
+        sleep(10);
 
-            return $result;
-        } catch (ValidationException $e) {
-            $this->logVerbose('ValidationException caught!');
-            $this->logVerbose('Exception message: '.$e->getMessage());
-            $this->logVerbose('Exception errors:');
-            $this->logVerbose(print_r($e->errors(), true));
-            throw new \RuntimeException('Error installing SSL: '.$e->getMessage());
-        } catch (\Exception $e) {
-            $this->logVerbose('Exception caught: '.get_class($e));
-            $this->logVerbose('Exception message: '.$e->getMessage());
-            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
-            throw $e;
+        $maxRetries = 3;
+        $retryCount = 0;
+
+        while ($retryCount < $maxRetries) {
+            try {
+                $this->logVerbose('Calling forge->obtainLetsEncryptCertificate()... (attempt '.($retryCount + 1).'/'.$maxRetries.')');
+                $result = $this->forge->obtainLetsEncryptCertificate($this->serverId, $this->siteId(), $sslConfig, true);
+                $this->logVerbose('SSL certificate installation initiated!');
+                $this->logVerbose('Result: '.json_encode($result, JSON_PRETTY_PRINT));
+
+                return $result;
+            } catch (NotFoundException $e) {
+                $retryCount++;
+                $this->logVerbose('NotFoundException caught (attempt '.$retryCount.'/'.$maxRetries.')');
+                $this->logVerbose('Exception message: '.$e->getMessage());
+
+                // NotFoundException can occur if:
+                // 1. Certificate doesn't exist yet (expected for new sites)
+                // 2. Site/certificate ID is invalid
+                // 3. DNS hasn't propagated yet
+
+                if ($retryCount >= $maxRetries) {
+                    $this->logVerbose('Max retries reached for SSL installation');
+                    warning('SSL certificate installation failed after '.$maxRetries.' attempts.');
+                    warning('This is often due to DNS propagation delays.');
+                    warning('The site will continue to work over HTTP.');
+                    warning('You can manually install SSL later via the Forge dashboard or run this command again.');
+                    $this->logVerbose('Skipping SSL installation and continuing...');
+
+                    // Return null to indicate SSL installation was skipped
+                    return null;
+                }
+
+                // Wait longer between retries (exponential backoff)
+                $waitTime = 15 * $retryCount; // 15, 30, 45 seconds
+                $this->logVerbose("Waiting {$waitTime} seconds before retry (DNS propagation may need more time)...");
+                sleep($waitTime);
+
+            } catch (ValidationException $e) {
+                $this->logVerbose('ValidationException caught!');
+                $this->logVerbose('Exception message: '.$e->getMessage());
+                $this->logVerbose('Exception errors:');
+                $this->logVerbose(print_r($e->errors(), true));
+
+                // Validation errors usually mean the request is invalid, not a timing issue
+                warning('SSL certificate installation failed due to validation error: '.$e->getMessage());
+                warning('The site will continue to work over HTTP.');
+                warning('You can manually install SSL later via the Forge dashboard.');
+                $this->logVerbose('Skipping SSL installation and continuing...');
+
+                return null;
+            } catch (\Exception $e) {
+                $retryCount++;
+                $this->logVerbose('Exception caught: '.get_class($e));
+                $this->logVerbose('Exception message: '.$e->getMessage());
+
+                // For other exceptions, only retry if it's a network/API issue
+                $isRetryable = strpos($e->getMessage(), 'timeout') !== false
+                    || strpos($e->getMessage(), 'connection') !== false
+                    || strpos($e->getMessage(), 'could not be found') !== false;
+
+                if ($isRetryable && $retryCount < $maxRetries) {
+                    $waitTime = 10 * $retryCount;
+                    $this->logVerbose("Retryable error detected. Waiting {$waitTime} seconds before retry...");
+                    sleep($waitTime);
+
+                    continue;
+                }
+
+                // If not retryable or max retries reached, log and skip
+                $this->logVerbose('Exception trace: '.$e->getTraceAsString());
+                warning('SSL certificate installation failed: '.$e->getMessage());
+                warning('The site will continue to work over HTTP.');
+                warning('You can manually install SSL later via the Forge dashboard.');
+                $this->logVerbose('Skipping SSL installation and continuing...');
+
+                return null;
+            }
         }
+
+        // Should not reach here, but just in case
+        warning('SSL certificate installation could not be completed.');
+        warning('The site will continue to work over HTTP.');
+
+        return null;
     }
 
     /**
@@ -602,33 +651,6 @@ class StagingCreateCommand extends BaseCommand
         $commandString = collect($commands)->implode(' && ');
         $this->logVerbose("Theme installation commands:\n{$commandString}");
         $this->runCommandViaDeployScript($commandString);
-    }
-
-    /**
-     * Run a command via the Forge API
-     */
-    private function runCommandViaApi(string $command): mixed
-    {
-        $this->logVerbose('Executing site command via API...');
-        $this->logVerbose("Server ID: {$this->serverId}");
-        $this->logVerbose("Site ID: {$this->siteId()}");
-        $this->logVerbose("Command: {$command}");
-
-        try {
-            $this->logVerbose('Calling forge->executeSiteCommand()...');
-            $siteCommand = $this->forge->executeSiteCommand($this->serverId, $this->siteId(), ['command' => $command]);
-            $this->logVerbose('Command executed successfully!');
-            $this->logVerbose('Command ID: '.($siteCommand->id ?? 'N/A'));
-            $this->logVerbose('Command Status: '.($siteCommand->status ?? 'N/A'));
-            $this->logVerbose('Full response: '.json_encode($siteCommand, JSON_PRETTY_PRINT));
-
-            return $siteCommand;
-        } catch (\Exception $e) {
-            $this->logVerbose('Exception caught: '.get_class($e));
-            $this->logVerbose('Exception message: '.$e->getMessage());
-            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
-            throw $e;
-        }
     }
 
     /**
@@ -812,155 +834,6 @@ class StagingCreateCommand extends BaseCommand
     private function siteId(): int
     {
         return $this->site->id;
-    }
-
-    /**
-     * Get the organization ID from the server or organizations API
-     */
-    private function getOrganizationId(): ?int
-    {
-        if ($this->organizationId !== null) {
-            return $this->organizationId;
-        }
-
-        // First check if it's stored in config
-        $orgId = $this->cfg->get('forge_organization_id');
-        if ($orgId) {
-            $this->logVerbose("Organization ID from config: {$orgId}");
-
-            return $this->organizationId = (int) $orgId;
-        }
-
-        // Fetch from server
-        $this->logVerbose('Fetching organization ID from server...');
-        $this->logVerbose("Server ID: {$this->serverId}");
-
-        try {
-            $this->logVerbose('Calling forge->server()...');
-            $server = $this->forge->server($this->serverId);
-            $this->logVerbose('Server retrieved!');
-            $this->logVerbose('Server data: '.json_encode($server, JSON_PRETTY_PRINT));
-
-            // Check for organization_id property (may be named differently)
-            $orgId = $server->organizationId ?? $server->organization_id ?? null;
-
-            if ($orgId) {
-                $this->logVerbose("Organization ID from server: {$orgId}");
-                $this->cfg->set('forge_organization_id', $orgId);
-
-                return $this->organizationId = (int) $orgId;
-            }
-
-            $this->logVerbose('No organization ID found on server object, trying to fetch organizations...');
-
-            // Try to fetch organizations from API - check multiple possible method names
-            $organizations = null;
-            if (method_exists($this->forge, 'organizations')) {
-                try {
-                    $this->logVerbose('Calling forge->organizations()...');
-                    $organizations = $this->forge->organizations();
-                } catch (\Exception $e) {
-                    $this->logVerbose('Error calling organizations(): '.$e->getMessage());
-                }
-            }
-
-            // Try alternative method name
-            if (! $organizations && method_exists($this->forge, 'getOrganizations')) {
-                try {
-                    $this->logVerbose('Calling forge->getOrganizations()...');
-                    $organizations = $this->forge->getOrganizations();
-                } catch (\Exception $e) {
-                    $this->logVerbose('Error calling getOrganizations(): '.$e->getMessage());
-                }
-            }
-
-            if ($organizations && is_array($organizations)) {
-                $this->logVerbose('Organizations retrieved: '.count($organizations));
-
-                if (count($organizations) === 1) {
-                    $orgId = $organizations[0]->id ?? $organizations[0]->organizationId ?? $organizations[0]->organization_id ?? null;
-                    if ($orgId) {
-                        $this->logVerbose("Organization ID from organizations API: {$orgId}");
-                        $this->cfg->set('forge_organization_id', $orgId);
-
-                        return $this->organizationId = (int) $orgId;
-                    }
-                } elseif (count($organizations) > 1) {
-                    // Multiple organizations - let user select
-                    $this->logVerbose('Multiple organizations found, prompting user to select...');
-                    $orgChoices = [];
-                    foreach ($organizations as $org) {
-                        $orgId = $org->id ?? $org->organizationId ?? $org->organization_id ?? null;
-                        $orgName = $org->name ?? $org->organizationName ?? "Organization {$orgId}";
-                        if ($orgId) {
-                            $orgChoices[$orgId] = $orgName;
-                            $this->logVerbose("Organization: {$orgId} - {$orgName}");
-                        }
-                    }
-
-                    if (! empty($orgChoices)) {
-                        $selectedOrgId = select(
-                            label: 'Your organization has multiple owners. Please select an organization:',
-                            options: $orgChoices,
-                            required: true
-                        );
-
-                        $this->logVerbose("Selected organization ID: {$selectedOrgId}");
-                        $this->cfg->set('forge_organization_id', $selectedOrgId);
-
-                        return $this->organizationId = (int) $selectedOrgId;
-                    }
-                }
-            } else {
-                $this->logVerbose('Could not fetch organizations from API - method may not exist or returned null');
-            }
-
-            // If we still don't have an organization ID, prompt the user
-            $this->logVerbose('No organization ID found - prompting user to provide it');
-            warning('Your organization has multiple owners, but the organization ID could not be automatically detected.');
-            info('You can find your organization ID in the Forge dashboard URL when viewing an organization.');
-            info('Example: https://forge.laravel.com/organizations/{organization_id}/servers');
-
-            $manualOrgId = text(
-                label: 'Please enter your organization ID (or press Enter to skip and try without it):',
-                placeholder: 'E.g. 12345',
-                hint: 'Found in the Forge dashboard URL',
-                required: false
-            );
-
-            if ($manualOrgId) {
-                $this->logVerbose("Organization ID provided manually: {$manualOrgId}");
-                $this->cfg->set('forge_organization_id', $manualOrgId);
-
-                return $this->organizationId = (int) $manualOrgId;
-            }
-
-            $this->logVerbose('No organization ID provided - will attempt without it');
-
-            return null;
-        } catch (\Exception $e) {
-            $this->logVerbose('Exception caught: '.get_class($e));
-            $this->logVerbose('Exception message: '.$e->getMessage());
-            $this->logVerbose('Exception trace: '.$e->getTraceAsString());
-
-            // If there's an error, still prompt the user
-            warning('Error fetching organization ID: '.$e->getMessage());
-            $manualOrgId = text(
-                label: 'Please enter your organization ID manually (or press Enter to skip):',
-                placeholder: 'E.g. 12345',
-                hint: 'Found in the Forge dashboard URL',
-                required: false
-            );
-
-            if ($manualOrgId) {
-                $this->logVerbose("Organization ID provided manually after error: {$manualOrgId}");
-                $this->cfg->set('forge_organization_id', $manualOrgId);
-
-                return $this->organizationId = (int) $manualOrgId;
-            }
-
-            return null;
-        }
     }
 
     /**
@@ -1160,7 +1033,6 @@ class StagingCreateCommand extends BaseCommand
             $this->logVerbose('Exception trace: '.$e->getTraceAsString());
             throw $e;
         }
-
     }
 
     /**
@@ -1343,8 +1215,14 @@ class StagingCreateCommand extends BaseCommand
 
             // Wait for command to complete
             $waitCount = 0;
+            $maxWaitAttempts = 60; // Maximum 60 seconds wait
             while ($siteCommand->status === 'running' || $siteCommand->status === 'waiting') {
                 $waitCount++;
+                if ($waitCount > $maxWaitAttempts) {
+                    $this->logVerbose('ERROR: Command timeout - exceeded maximum wait attempts');
+                    error('Command timed out after '.$maxWaitAttempts.' seconds. The remote command may still be running.');
+                    exit(1);
+                }
                 $this->logVerbose("Waiting for command to complete... (attempt {$waitCount})");
                 sleep(1);
                 $this->logVerbose('Calling forge->getSiteCommand() to check status...');
@@ -1357,14 +1235,47 @@ class StagingCreateCommand extends BaseCommand
             $this->logVerbose('Output: '.($siteCommand->output ?? 'N/A'));
 
             if ($siteCommand->status === 'finished') {
-                // Extract connection key from output
-                $output = trim($siteCommand->output);
+                // Wait for output to be populated (race condition: status can be "finished" before output is available)
+                $outputRetryCount = 0;
+                $maxOutputRetries = 10; // Wait up to 10 seconds for output to be populated
+                $output = trim($siteCommand->output ?? '');
+
+                while (empty($output) || $output === 'Command output not found.' || $output === 'No output') {
+                    if ($outputRetryCount >= $maxOutputRetries) {
+                        $this->logVerbose('ERROR: Output not available after maximum retries');
+                        $this->logVerbose('This suggests the command finished but output was never populated.');
+                        error('Failed to retrieve connection key from remote site.');
+                        error('The command completed but no output was returned. This could indicate:');
+                        error('1. WP Migrate DB plugin is not properly configured on remote site');
+                        error('2. Plugin is not activated or has errors');
+                        error('3. The wp migratedb command failed silently on the remote site');
+                        error('4. API timing issue - output may not be available yet');
+                        error('');
+                        error('Please check the remote site and ensure WP Migrate DB is working properly.');
+                        error('You can manually verify by running: wp migratedb setting get connection-key');
+                        exit(1);
+                    }
+
+                    $outputRetryCount++;
+                    $this->logVerbose("Output not yet available, retrying... (attempt {$outputRetryCount}/{$maxOutputRetries})");
+                    sleep(1);
+
+                    // Re-fetch the command to get updated output
+                    $this->logVerbose('Re-fetching command to check for output...');
+                    $result = $this->forge->getSiteCommand($this->serverId, $this->siteId(), $siteCommand->id);
+                    $siteCommand = $result[0];
+                    $output = trim($siteCommand->output ?? '');
+                    $this->logVerbose('Output after retry: '.($output ? 'Found ('.strlen($output).' chars)' : 'Still empty'));
+                }
+
+                $this->logVerbose('Output retrieved successfully after '.$outputRetryCount.' retries');
                 $this->logVerbose('Trimmed output length: '.strlen($output));
 
-                // Check for common error messages
-                if (empty($output) || $output === 'Command output not found.' || $output === 'No output') {
-                    $this->logVerbose('ERROR: Failed to retrieve connection key');
+                // Additional check for error messages that might have been returned
+                if ($output === 'Command output not found.' || $output === 'No output') {
+                    $this->logVerbose('ERROR: Command returned error message in output');
                     error('Failed to retrieve connection key from remote site.');
+                    error('The command returned an error message: '.$output);
                     error('This usually means:');
                     error('1. WP Migrate DB plugin is not properly configured on remote site');
                     error('2. Plugin is not activated or has errors');
@@ -1434,30 +1345,71 @@ class StagingCreateCommand extends BaseCommand
         }
 
         info("Starting migration from {$localUrl} to {$remoteUrl}");
+        info('This may take several minutes depending on the size of your database and media files...');
 
-        $command = "wp migratedb push $remoteUrl ".
-            escapeshellarg($migrateKey).
-            ' --find='.escapeshellarg($localUrl).
-            ' --replace='.escapeshellarg($remoteUrl).
-            ' --media=all '.
-            ' --plugin-files=all';
+        $command = [
+            'wp',
+            'migratedb',
+            'push',
+            $remoteUrl,
+            $migrateKey,
+            '--find='.$localUrl,
+            '--replace='.$remoteUrl,
+            '--media=all',
+            '--plugin-files=all',
+        ];
 
-        $this->logVerbose('Migration command: '.$command);
-        info('Executing command: '.$command);
+        $this->logVerbose('Migration command: '.implode(' ', array_map('escapeshellarg', $command)));
+
+        // Use Process for better control, real-time output, and timeout handling
+        $process = new Process($command, null, null, null, 1800); // 30 minute timeout for large migrations
 
         $this->logVerbose('Executing migration command...');
-        exec($command, $output, $exitCode);
+        $this->logVerbose('Timeout set to: 1800 seconds (30 minutes)');
+
+        $output = [];
+        $errorOutput = [];
+
+        // Stream output in real-time for verbose mode, otherwise just collect it
+        $isVerbose = $this->output->isVerbose();
+        $outputObj = $this->output;
+        $process->run(function ($type, $buffer) use (&$output, &$errorOutput, $isVerbose, $outputObj) {
+            if ($type === Process::OUT) {
+                $output[] = $buffer;
+                if ($isVerbose) {
+                    $outputObj->write($buffer);
+                }
+            } else {
+                $errorOutput[] = $buffer;
+                if ($isVerbose) {
+                    $outputObj->write('<fg=red>'.$buffer.'</>');
+                }
+            }
+        });
+
+        $exitCode = $process->getExitCode();
+        $allOutput = implode("\n", $output);
+        $allErrorOutput = implode("\n", $errorOutput);
+
         $this->logVerbose("Exit code: {$exitCode}");
         $this->logVerbose('Output lines: '.count($output));
-        $this->logVerbose("Output:\n".implode("\n", $output));
+        $this->logVerbose("Output:\n{$allOutput}");
+        if (! empty($allErrorOutput)) {
+            $this->logVerbose("Error output:\n{$allErrorOutput}");
+        }
 
         if ($exitCode !== 0) {
             $this->logVerbose('ERROR: Migration failed');
             error('Migration failed with exit code: '.$exitCode);
-            error('Command output: '.implode("\n", $output));
+
+            // Combine output and error output for analysis
+            $fullOutput = trim($allOutput."\n".$allErrorOutput);
+            if (! empty($fullOutput)) {
+                error('Command output: '.$fullOutput);
+            }
 
             // Provide specific error guidance based on common issues
-            $outputString = implode("\n", $output);
+            $outputString = $fullOutput;
             if (strpos($outputString, 'Version Mismatch') !== false) {
                 $this->logVerbose('Detected version mismatch error');
                 error('Version mismatch detected between local and remote WP Migrate DB plugins.');
@@ -1476,6 +1428,20 @@ class StagingCreateCommand extends BaseCommand
                 error('1. Remote site is accessible');
                 error('2. Firewall settings allow connections');
                 error('3. SSL certificate is valid');
+            } elseif ($process->isTimedOut()) {
+                $this->logVerbose('Detected timeout');
+                error('Migration timed out after 30 minutes.');
+                error('This usually means the migration is very large or the connection is slow.');
+                error('You may need to:');
+                error('1. Run the migration manually with a longer timeout');
+                error('2. Migrate in smaller chunks (database first, then media separately)');
+                error('3. Check your network connection and remote site performance');
+            } elseif (empty($fullOutput) && $exitCode !== 0) {
+                error('Migration command failed with no output.');
+                error('This could indicate:');
+                error('1. WP-CLI is not available or not in PATH');
+                error('2. The wp migratedb command is not available');
+                error('3. Permission issues preventing command execution');
             }
 
             exit(1);
@@ -1484,7 +1450,7 @@ class StagingCreateCommand extends BaseCommand
         $this->logVerbose('Migration completed successfully!');
         info('Migration completed successfully');
 
-        return implode("\n", $output);
+        return $allOutput;
     }
 
     /**
@@ -1525,8 +1491,8 @@ class StagingCreateCommand extends BaseCommand
     private function displayCredentials(): void
     {
         info('');
-        info('Staging site ready on [https://'.$this->fullDomain().']. Build something unexpected.');
-        info('Admin ready on [https://'.$this->fullDomain().'/wp-admin]. Manage your website here.');
+        info('Staging site ready on [https://'.$this->fullDomain().'].');
+        info('Admin ready on [https://'.$this->fullDomain().'/wp-admin].');
     }
 
     /**

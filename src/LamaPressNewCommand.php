@@ -15,6 +15,7 @@ use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
 use function Laravel\Prompts\outro;
+use function Laravel\Prompts\password;
 use function Laravel\Prompts\pause;
 use function Laravel\Prompts\progress;
 use function Laravel\Prompts\spin;
@@ -136,6 +137,11 @@ class LamaPressNewCommand extends BaseCommand
         $startTime = microtime(true);
         $initialStartTime = microtime(true);
 
+        // Run config check outside of spin() so prompts work correctly
+        info('Checking CLLI config...');
+        $this->checkClliConfig();
+        info('✅ CLLI config validated');
+
         // Initialize command first to get user preferences (like Git repo creation)
         $this->initializeCommand();
 
@@ -210,6 +216,34 @@ class LamaPressNewCommand extends BaseCommand
             hint: 'This will create a new private repository and push the initial code',
             default: true
         );
+    }
+
+    /**
+     * Validate and prompt for missing CLLI configuration values
+     */
+    private function checkClliConfig(): bool
+    {
+        $config = new CliConfig;
+
+        $requiredKeys = [
+            'wp_migrate_license_key' => 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
+        ];
+
+        foreach ($requiredKeys as $key => $help) {
+            if (! $config->get($key)) {
+                info($help);
+
+                $value = password(
+                    label: "CLLI config is missing the $key key. Please provide a value",
+                    hint: $help,
+                    required: true
+                );
+
+                $config->set($key, $value);
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -365,17 +399,24 @@ class LamaPressNewCommand extends BaseCommand
             $this->runCommands($commands, $this->input, $this->output, null, [], ! $this->verbose);
         }
 
-        // Set WP Migrate DB Pro license key if available in config
+        // Set WP Migrate DB Pro license key
         $config = new CliConfig;
         $licenseKey = $config->get('wp_migrate_license_key');
 
-        if ($licenseKey) {
-            $commands = [
-                'cd '.$this->directory,
-                "wp migrate setting update license {$licenseKey} --user=".$this->email,
-            ];
-            $this->runCommands($commands, $this->input, $this->output, null, [], ! $this->verbose);
+        if (! $licenseKey) {
+            $licenseKey = password(
+                label: 'Please provide your WP Migrate DB Pro license key',
+                hint: 'Available in your WP Migrate account at https://deliciousbrains.com/my-account/licenses',
+                required: true
+            );
+            $config->set('wp_migrate_license_key', $licenseKey);
         }
+
+        $commands = [
+            'cd '.$this->directory,
+            "wp migrate setting update license {$licenseKey} --user=".$this->email,
+        ];
+        $this->runCommands($commands, $this->input, $this->output, null, [], ! $this->verbose);
 
         // Update all plugins
         $commands = [
