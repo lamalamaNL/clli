@@ -57,6 +57,13 @@ class LamaPressNewCommand extends BaseCommand
         'wp-rocket.zip',
     ];
 
+    private const WPML_PLUGINS = [
+        'sitepress-multilingual-cms.zip',
+        'wpml-string-translation.zip',
+        'wpml-media-translation.zip',
+        'wp-seo-multilingual.zip',
+    ];
+
     private const ACTIVE_PLUGINS = [
         'wordpress-seo',
         'acf-content-analysis-for-yoast-seo',
@@ -98,6 +105,8 @@ class LamaPressNewCommand extends BaseCommand
     protected ?string $dbName = null;
 
     protected bool $createGitRepo = true;
+
+    protected bool $installWpml = false;
 
     protected bool $verbose = false;
 
@@ -215,6 +224,12 @@ class LamaPressNewCommand extends BaseCommand
             label: 'Initialize Git repository and push to GitHub?',
             hint: 'This will create a new private repository and push the initial code',
             default: true
+        );
+
+        $this->installWpml = confirm(
+            label: 'Install WPML plugins?',
+            hint: 'This will install WPML Multilingual CMS, String Translation, Media Translation, and SEO Multilingual',
+            default: false
         );
     }
 
@@ -397,6 +412,17 @@ class LamaPressNewCommand extends BaseCommand
                 'wp plugin install '.self::PLUGIN_DOWNLOAD_URL."/{$plugin}",
             ];
             $this->runCommands($commands, $this->input, $this->output, null, [], ! $this->verbose);
+        }
+
+        // Install WPML plugins if user opted in
+        if ($this->installWpml) {
+            foreach (self::WPML_PLUGINS as $plugin) {
+                $commands = [
+                    'cd '.$this->directory,
+                    'wp plugin install '.self::PLUGIN_DOWNLOAD_URL."/{$plugin} --activate",
+                ];
+                $this->runCommands($commands, $this->input, $this->output, null, [], ! $this->verbose);
+            }
         }
 
         // Set WP Migrate DB Pro license key
