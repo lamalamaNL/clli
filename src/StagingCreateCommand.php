@@ -121,6 +121,9 @@ class StagingCreateCommand extends BaseCommand
         $this->checkClliConfig();
         info('✅ CLLI config validated');
 
+        // Ask initial questions outside of spin() so prompts work correctly
+        $this->subdomain = $this->getSubdomain();
+
         $steps = [
             ['checkThemeFolder', 'Theme folder check'],
             ['initializeCommand', 'Initializing command'],
@@ -299,7 +302,7 @@ class StagingCreateCommand extends BaseCommand
             'directory' => '/public',
             'isolated' => true,
             'username' => $this->siteIsolatedName(),
-            'php_version' => 'php84',
+            'php_version' => 'php83',
         ];
 
         $this->logVerbose('Creating site with config:');
@@ -745,6 +748,10 @@ class StagingCreateCommand extends BaseCommand
      */
     private function getSubdomain(): string
     {
+        if ($this->subdomain) {
+            return $this->subdomain;
+        }
+
         $subdomain = $this->input->getArgument('subdomain');
         if ($subdomain) {
             return $subdomain;

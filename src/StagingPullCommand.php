@@ -8,6 +8,7 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
+use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
 use function Laravel\Prompts\outro;
 use function Laravel\Prompts\text;
@@ -31,7 +32,7 @@ class StagingPullCommand extends BaseCommand
         $this
             ->setName('staging:pull')
             ->addArgument('connection_info', InputArgument::REQUIRED)
-            ->addOption('repository_url', 'r', InputArgument::OPTIONAL, 'Overwrite the git clone url for the respository')
+            ->addOption('repository_url', 'r', InputArgument::OPTIONAL, 'Overwrite the git clone url for the repository (default: git@github.com:lamalamaNL/<name>.git)')
             ->setDescription('Pull a staging environment');
     }
 
@@ -76,7 +77,7 @@ class StagingPullCommand extends BaseCommand
         $name = str_replace('.nl', '', $name);
         $name = str_replace('.com', '', $name);
 
-        $repositoryUrl = $input->getOption('repository_url') ?? 'https://github.com/lamalamaNL/'.$name.'.git';
+        $repositoryUrl = $input->getOption('repository_url') ?? 'git@github.com:lamalamaNL/'.$name.'.git';
 
         $user = 'lamalama';
         $password = md5(time().uniqid());
@@ -135,6 +136,9 @@ class StagingPullCommand extends BaseCommand
         ];
 
         if (($process = $this->runCommands($commands, $input, $output))->isSuccessful()) {
+            info('');
+            info('Local staging site ready at [http://'.$name.'.test]');
+            info('Admin panel at [http://'.$name.'.test/wp-admin]');
             outro('Staging environment pulled successfully!');
         }
 
