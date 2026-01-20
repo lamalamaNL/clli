@@ -86,6 +86,8 @@ class StagingCreateCommand extends BaseCommand
 
     private ?int $organizationId = null;
 
+    private ?string $buildCommand = null;
+
     /**
      * Configure the command options.
      */
@@ -1051,6 +1053,9 @@ class StagingCreateCommand extends BaseCommand
         $themeFolderName = explode('/', $this->repo)[1];
         $this->logVerbose("Theme folder name: {$themeFolderName}");
 
+        $buildCommand = $this->getBuildCommand();
+        $this->logVerbose("Using build command: {$buildCommand}");
+
         $commands = [
             // Go to theme folder
             'cd $FORGE_SITE_PATH/public/wp-content/themes/'.$themeFolderName,
@@ -1059,7 +1064,7 @@ class StagingCreateCommand extends BaseCommand
             'npm ci',
 
             // Build theme
-            'npm run build',
+            $buildCommand,
         ];
 
         $commandString = collect($commands)->implode(' && ');
@@ -1073,6 +1078,8 @@ class StagingCreateCommand extends BaseCommand
     private function setFinalDeploymentScript(): void
     {
         $themeFolderName = explode('/', $this->repo)[1];
+        $buildCommand = $this->getBuildCommand();
+        $this->logVerbose("Using build command for final deployment script: {$buildCommand}");
 
         $commands = [
             // Go to theme folder
@@ -1092,7 +1099,7 @@ class StagingCreateCommand extends BaseCommand
             'npm ci',
 
             // Build theme
-            'npm run build',
+            $buildCommand,
 
             '',
 
@@ -1527,5 +1534,56 @@ class StagingCreateCommand extends BaseCommand
         if ($this->output->isVerbose()) {
             $this->output->writeln("<fg=gray>[VERBOSE]</> {$message}");
         }
+    }
+
+    /**
+     * Determine the appropriate npm build command based on package.json scripts
+     *
+     * Checks for 'production' script first (Laravel Mix convention), then falls back to 'build'
+     */
+    private function getBuildCommand(): string
+    {
+        if ($this->buildCommand) {
+            return $this->buildCommand;
+        }
+
+        $packageJsonPath = getcwd().'/package.json';
+        $this->logVerbose("Checking package.json at: {$packageJsonPath}");
+
+        if (! file_exists($packageJsonPath)) {
+            $this->logVerbose('package.json not found, defaulting to "npm run build"');
+
+            return $this->buildCommand = 'npm run build';
+        }
+
+        $packageJson = json_decode(file_get_contents($packageJsonPath), true);
+
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->logVerbose('Failed to parse package.json, defaulting to "npm run build"');
+
+            return $this->buildCommand = 'npm run build';
+        }
+
+        $scripts = $packageJson['scripts'] ?? [];
+        $this->logVerbose('Available npm scripts: '.implode(', ', array_keys($scripts)));
+
+        // Check for 'production' script first (Laravel Mix convention)
+        if (isset($scripts['production'])) {
+            $this->logVerbose('Found "production" script, using "npm run production"');
+
+            return $this->buildCommand = 'npm run production';
+        }
+
+        // Fall back to 'build' script (Vite/modern tooling convention)
+        if (isset($scripts['build'])) {
+            $this->logVerbose('Found "build" script, using "npm run build"');
+
+            return $this->buildCommand = 'npm run build';
+        }
+
+        // Default to 'build' if neither is found
+        $this->logVerbose('No "production" or "build" script found, defaulting to "npm run build"');
+
+        return $this->buildCommand = 'npm run build';
     }
 }

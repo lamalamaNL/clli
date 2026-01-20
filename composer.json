@@ -26,8 +26,8 @@
     },
     "require-dev": {
         "laravel/pint": "^1.19",
+        "pestphp/pest": "^2.0",
         "phpstan/phpstan": "^1.10",
-        "phpunit/phpunit": "^9.3",
         "rector/rector": "^1.2"
     },
     "bin": [
@@ -38,12 +38,21 @@
             "LamaLama\\Clli\\Console\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
     "config": {
         "sort-packages": true,
         "allow-plugins": {
-            "pestphp/pest-plugin": false,
+            "pestphp/pest-plugin": true,
             "php-http/discovery": true
         }
+    },
+    "scripts": {
+        "test": "pest",
+        "test:coverage": "pest --coverage"
     },
     "minimum-stability": "dev",
     "prefer-stable": true
