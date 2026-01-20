@@ -14,7 +14,7 @@ use function Laravel\Prompts\outro;
 use function Laravel\Prompts\spin;
 use function Laravel\Prompts\text;
 
-class StagingPullCommand extends BaseCommand
+class ProductionPullCommand extends BaseCommand
 {
     use Concerns\ConfiguresPrompts;
 
@@ -37,10 +37,11 @@ class StagingPullCommand extends BaseCommand
     protected function configure(): void
     {
         $this
-            ->setName('staging:pull')
+            ->setName('production:pull')
             ->addArgument('connection_info', InputArgument::REQUIRED)
+            ->addArgument('name', InputArgument::REQUIRED)
             ->addOption('repository_url', 'r', InputArgument::OPTIONAL, 'Overwrite the git clone url for the repository (default: git@github.com:lamalamaNL/<name>.git)')
-            ->setDescription('Pull a staging environment');
+            ->setDescription('Pull a production environment');
     }
 
     /**
@@ -52,19 +53,37 @@ class StagingPullCommand extends BaseCommand
 
         $this->configurePrompts($input, $output);
 
-        intro('Lama Lama CLLI - Pull Staging Environment');
+        intro('Lama Lama CLLI - Pull Production Environment');
 
-        // Pattern for validation: URL followed by connection key
-        $pattern = '/^https:\/\/[a-zA-Z0-9\-]+\.lamalama\.dev\s+[a-zA-Z0-9+\-\/]+$/';
+        // Pattern for validation: URL followed by connection key (accepts any domain)
+        $pattern = '/^https?:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}\s+[a-zA-Z0-9+\-\/]+$/';
 
-        $input->setArgument('connection_info', text(
+        $connectionInfo = text(
             label: 'What is the WP Migrate DB connection info?',
-            placeholder: 'E.g. https://projectx.lamalama.dev qQSr+EVrJ83uIkME/zQiCBb4V/nVaG1dzh5vmqEq',
+            placeholder: 'E.g. https://www.clientsite.nl qQSr+EVrJ83uIkME/zQiCBb4V/nVaG1dzh5vmqEq',
             hint: 'Format: <url> <connection-key> (space-separated)',
             required: 'The WP Migrate DB connection info is required.',
             validate: fn ($value) => preg_match($pattern, $value) !== 0
                 ? null
-                : 'Invalid format. Expected: https://domain.lamalama.dev <connection-key>',
+                : 'Invalid format. Expected: https://domain.com <connection-key>',
+        );
+
+        $input->setArgument('connection_info', $connectionInfo);
+
+        // Derive suggested project name from domain
+        $connectionInfoParts = explode(' ', $connectionInfo);
+        $domain = $connectionInfoParts[0];
+        $suggestedName = preg_replace('/^https?:\/\//', '', $domain);
+        $suggestedName = preg_replace('/^www\./', '', $suggestedName);
+        $suggestedName = preg_replace('/\.[a-zA-Z]{2,}$/', '', $suggestedName);
+        $suggestedName = preg_replace('/\.[a-zA-Z]{2,}$/', '', $suggestedName); // Handle .co.uk etc.
+
+        $input->setArgument('name', text(
+            label: 'What should the local project folder be named?',
+            placeholder: 'E.g. clientsite',
+            default: $suggestedName,
+            hint: 'This will create a local folder and http://<name>.test domain',
+            required: 'The project name is required.',
         ));
     }
 
@@ -78,15 +97,10 @@ class StagingPullCommand extends BaseCommand
         $this->verbose = $output->isVerbose();
 
         $connectionInfo = $input->getArgument('connection_info');
+        $name = $input->getArgument('name');
 
         $connectionInfoParts = explode(' ', $connectionInfo);
         $domain = $connectionInfoParts[0];
-
-        $name = str_replace('https://', '', $connectionInfoParts[0]);
-        $name = str_replace('www.', '', $name);
-        $name = str_replace('.lamalama.dev', '', $name);
-        $name = str_replace('.nl', '', $name);
-        $name = str_replace('.com', '', $name);
 
         $repositoryUrl = $input->getOption('repository_url') ?? 'git@github.com:lamalamaNL/'.$name.'.git';
 
@@ -190,9 +204,9 @@ class StagingPullCommand extends BaseCommand
         info('');
         info('🎉 All done in '.round(microtime(true) - $initialStartTime, 2).'s');
         info('');
-        info('Local staging site ready at [http://'.$name.'.test]');
+        info('Local production site ready at [http://'.$name.'.test]');
         info('Admin panel at [http://'.$name.'.test/wp-admin]');
-        outro('Staging environment pulled successfully!');
+        outro('Production environment pulled successfully!');
 
         return Command::SUCCESS;
     }
