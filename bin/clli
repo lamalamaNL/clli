@@ -15,5 +15,6 @@ $app->add(new LamaLama\Clli\Console\LocalConfigShowCommand);
 $app->add(new LamaLama\Clli\Console\LocalConfigUpdateCommand);
 $app->add(new LamaLama\Clli\Console\StagingCreateCommand);
 $app->add(new LamaLama\Clli\Console\StagingPullCommand);
+$app->add(new LamaLama\Clli\Console\ProductionPullCommand);
 
 $app->run();
