@@ -88,6 +88,8 @@ class StagingCreateCommand extends BaseCommand
 
     private ?string $buildCommand = null;
 
+    private bool $migrateMedia = true;
+
     /**
      * Configure the command options.
      */
@@ -125,6 +127,12 @@ class StagingCreateCommand extends BaseCommand
 
         // Ask initial questions outside of spin() so prompts work correctly
         $this->subdomain = $this->getSubdomain();
+
+        $this->migrateMedia = confirm(
+            label: 'Do you want to migrate media files to the staging environment?',
+            default: true,
+            hint: 'This will upload all media files from your local WordPress installation'
+        );
 
         $steps = [
             ['checkThemeFolder', 'Theme folder check'],
@@ -759,10 +767,14 @@ class StagingCreateCommand extends BaseCommand
             return $subdomain;
         }
 
+        // Get the theme folder name as default
+        $themeFolderName = basename(getcwd());
+
         return text(
             label: 'What is the subdomain we need to deploy to',
             placeholder: 'E.g. projectname',
-            hint: 'This will create: projectname.lamalama.dev',
+            default: $themeFolderName,
+            hint: 'This will create: '.$themeFolderName.'.lamalama.dev',
             required: true
         );
     }
@@ -1359,7 +1371,12 @@ class StagingCreateCommand extends BaseCommand
         }
 
         info("Starting migration from {$localUrl} to {$remoteUrl}");
-        info('This may take several minutes depending on the size of your database and media files...');
+        if ($this->migrateMedia) {
+            info('This may take several minutes depending on the size of your database and media files...');
+        } else {
+            info('This may take a few minutes depending on the size of your database...');
+            info('Media files will not be migrated.');
+        }
 
         $command = [
             'wp',
@@ -1369,9 +1386,16 @@ class StagingCreateCommand extends BaseCommand
             $migrateKey,
             '--find='.$localUrl,
             '--replace='.$remoteUrl,
-            '--media=all',
             '--plugin-files=all',
         ];
+
+        // Add media migration flag if enabled
+        if ($this->migrateMedia) {
+            $this->logVerbose('Media migration enabled, adding --media=all flag');
+            array_splice($command, 6, 0, '--media=all');
+        } else {
+            $this->logVerbose('Media migration disabled, skipping --media=all flag');
+        }
 
         $this->logVerbose('Migration command: '.implode(' ', array_map('escapeshellarg', $command)));
 
